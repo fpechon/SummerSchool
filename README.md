@@ -25,7 +25,7 @@ if (!require("CASdatasets")) install.packages("CASdatasets", repos = "http://cas
 require("CASdatasets")
 ```
 
-If the installation worked correctly, the following lines should load a dataset and show the first few lines.
+If the installation succeeded, the following lines should load a dataset and show the first six lines.
 
 ``` r
 data("freMTPLfreq")
