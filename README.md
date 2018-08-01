@@ -1,8 +1,8 @@
 README
 ================
 
-SummerSchool
-============
+Summer School Lausanne 2018
+===========================
 
 All the scripts of the UseR sessions will be available here.
 
@@ -21,7 +21,8 @@ Please run the following script in your R session to install all the required pa
 Start with the package containing datasets. If there is a query to install from source, answer "y" (yes).
 
 ``` r
-if (!require("CASdatasets")) install.packages("CASdatasets", repos = "http://cas.uqam.ca/pub/R/")
+if (!require("xts")) install.packages("xts")
+if (!require("CASdatasets")) install.packages("CASdatasets", repos = "http://cas.uqam.ca/pub/R/", type="source")
 require("CASdatasets")
 ```
 
@@ -50,7 +51,6 @@ head(freMTPLfreq)
 Then, we can install and load all the other packages.
 
 ``` r
-if (!require("xts")) install.packages("xts")
 if (!require("Rcpp")) install.packages("Rcpp")
 if (!require("zoo")) install.packages("zoo")
 if (!require("sp")) install.packages("sp")
