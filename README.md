@@ -1,8 +1,5 @@
-README
-================
-
 Summer School Lausanne 2018
-===========================
+================
 
 All the scripts of the UseR sessions will be available here.
 
@@ -11,7 +8,7 @@ More details on the Pricing Game will follow.
 Required Software
 -----------------
 
--   R (at least 3.4.3 <https://cloud.r-project.org/bin/windows/base/old/3.4.3> )
+-   R (at least 3.4.3 <https://cloud.r-project.org/bin/windows/base/> )
 -   RStudio ( <https://www.rstudio.com/products/rstudio/download/#download> )
 -   For Windows, Rtools : <https://cran.r-project.org/bin/windows/Rtools/Rtools35.exe>
 -   For Mac: Install gfortran-6.1.pkg (more info <https://cran.r-project.org/bin/macosx/tools/> )
