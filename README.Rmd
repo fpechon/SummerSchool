@@ -25,6 +25,7 @@ Please run the following script in your R session to install all the required pa
 
 Start with the package containing datasets. If there is a query to install from source, answer "y" (yes).
 ```{r,include=TRUE, message=FALSE, warning=FALSE}
+if (!require("sp")) install.packages("sp")
 if (!require("xts")) install.packages("xts")
 if (!require("CASdatasets")) install.packages("CASdatasets", repos = "http://cas.uqam.ca/pub/R/", type="source")
 require("CASdatasets")
@@ -41,7 +42,6 @@ Then, we can install and load all the other packages.
 ```{r,include=TRUE, message=FALSE, warning=FALSE}
 if (!require("Rcpp")) install.packages("Rcpp")
 if (!require("zoo")) install.packages("zoo")
-if (!require("sp")) install.packages("sp")
 if (!require("caret")) install.packages("caret")
 if (!require("mgcv")) install.packages("mgcv")
 if (!require("plyr")) install.packages("plyr")
