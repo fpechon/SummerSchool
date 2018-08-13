@@ -14,6 +14,40 @@ Brief Introduction to R and Descriptive Analysis of the Dataset
     -   [Region](#region)
     -   [Density](#density)
 
+``` r
+options(encoding = 'UTF-8')
+#Loading all the necessary packages
+if (!require("CASdatasets")) install.packages("CASdatasets")
+if (!require("caret")) install.packages("caret")
+if (!require("ggplot2")) install.packages("ggplot2")
+if (!require("mgcv")) install.packages("mgcv")
+if (!require("plyr")) install.packages("plyr")
+if (!require("gridExtra")) install.packages("gridExtra")
+if (!require("visreg")) install.packages("visreg")
+if (!require("MASS")) install.packages("MASS")
+if (!require("plotrix")) install.packages("plotrix")
+if (!require("rgeos")) install.packages("rgeos", type="source")
+if (!require("rgdal")) install.packages("rgdal", type="source")
+if (!require("xtable")) install.packages("xtable")
+if (!require("maptools")) install.packages("maptools")
+
+
+
+require("CASdatasets")
+require("ggplot2")
+require("mgcv")
+require("caret")
+require("gridExtra")
+require("plyr")
+require("visreg")
+require("MASS")
+require("plotrix")
+require("rgdal")
+require("rgeos")
+require("xtable")
+require("maptools")
+```
+
 Introduction
 ============
 
@@ -22,13 +56,14 @@ Introduction
 require("CASdatasets")
 data("freMTPLfreq")
 
-freMTPLfreq = subset(freMTPLfreq, Exposure <= 1 & Exposure >= 0 & CarAge <= 
-    25)
+freMTPLfreq = subset(freMTPLfreq, Exposure<=1 & Exposure >= 0 & CarAge<=25)
 
+# Subsample of the whole dataset
 set.seed(85)
 require("caret")
 folds = createDataPartition(freMTPLfreq$ClaimNb, 0.5)
 dataset = freMTPLfreq[folds[[1]], ]
+save(dataset, file="dataset.RData")
 ```
 
 A good idea is to check whether the dataset has been loaded correctly. To do this, the following tools can be used:
@@ -141,7 +176,7 @@ The Exposure reveals the fraction of the year during which the policyholder is i
 We can show the number of months of exposure on a table.
 
 ``` r
-table(cut(dataset$Exposure, breaks = seq(from = 0, to = 1, by = 1/12), labels = 1:12))
+table(cut(dataset$Exposure, breaks = seq(from = 0, to = 1,by = 1/12), labels = 1:12))
 ```
 
     ## 
@@ -151,8 +186,7 @@ table(cut(dataset$Exposure, breaks = seq(from = 0, to = 1, by = 1/12), labels = 
 Using the function *prop.table*, it is possible to represent this information in relative terms show the number of months of exposure on a table.
 
 ``` r
-round(prop.table(table(cut(dataset$Exposure, breaks = seq(from = 0, to = 1, 
-    by = 1/12), labels = 1:12))), 4)
+round(prop.table(table(cut(dataset$Exposure, breaks = seq(from = 0, to = 1,by = 1/12), labels = 1:12))), 4)
 ```
 
     ## 
@@ -186,7 +220,7 @@ ggplot(dataset, aes(x = ClaimNb)) + geom_bar() + geom_text(stat = "count", aes(l
 We can compute the average claim frequency in this portfolio, taking into account the different exposures.
 
 ``` r
-sum(dataset$ClaimNb)/sum(dataset$Exposure)
+sum(dataset$ClaimNb) / sum(dataset$Exposure)
 ```
 
 Here, we obtain **0.0699**.
@@ -218,16 +252,17 @@ Remember however, that in insurance, exposures may differ from one policyholder 
 
 ``` r
 require(plyr)
-Power.summary = ddply(dataset, .(Power), summarize, totalExposure = sum(Exposure), 
-    Number.Observations = length(Exposure))
+Power.summary = ddply(dataset, .(Power), summarize, totalExposure = sum(Exposure), Number.Observations = length(Exposure))
 ```
 
 We can show this on a plot as well:
 
 ``` r
-ggplot(Power.summary, aes(x = Power, y = totalExposure, fill = Power)) + geom_bar(stat = "identity") + 
-    ylab("Exposure in years") + geom_text(stat = "identity", aes(label = round(totalExposure, 
-    0), color = Power), vjust = -0.5) + guides(fill = FALSE, color = FALSE)
+ggplot(Power.summary, aes(x=Power, y=totalExposure, fill=Power)) + 
+  geom_bar(stat="identity")+
+  ylab("Exposure in years")+
+  geom_text(stat='identity', aes(label=round(totalExposure, 0), color=Power), vjust=-0.5)+
+  guides(fill=FALSE, color=FALSE)
 ```
 
 <img src="intro_files/figure-markdown_github/unnamed-chunk-16-1.png" style="display: block; margin: auto;" />
@@ -235,13 +270,12 @@ ggplot(Power.summary, aes(x = Power, y = totalExposure, fill = Power)) + geom_ba
 Let us now look at the observed claim frequency in each level
 
 ``` r
-Power.summary = ddply(dataset, .(Power), summarize, totalExposure = sum(Exposure), 
-    Number.Observations = length(Exposure), Number.Claims = sum(ClaimNb), Obs.Claim.Frequency = sum(ClaimNb)/sum(Exposure))
+Power.summary = ddply(dataset, .(Power), summarize, totalExposure = sum(Exposure), Number.Observations = length(Exposure), Number.Claims = sum(ClaimNb), Obs.Claim.Frequency = sum(ClaimNb)/sum(Exposure))
 Power.summary
 ```
 
-<!-- html table generated in R 3.4.3 by xtable 1.8-2 package -->
-<!-- Tue Aug 07 08:59:05 2018 -->
+<!-- html table generated in R 3.5.1 by xtable 1.8-2 package -->
+<!-- Mon Aug 13 16:48:56 2018 -->
 <table border="1">
 <tr>
 <th>
@@ -468,11 +502,10 @@ o
 We can compute the ratio to the portfolio claim frequency.
 
 ``` r
-portfolio.cf = sum(dataset$ClaimNb)/sum(dataset$Exposure)
+portfolio.cf = sum(dataset$ClaimNb)/ sum(dataset$Exposure)
 
-ggplot(Power.summary) + geom_bar(stat = "identity", aes(x = Power, y = Obs.Claim.Frequency, 
-    fill = Power)) + geom_line(aes(x = as.numeric(Power), y = portfolio.cf), 
-    color = "red") + guides(fill = FALSE)
+ggplot(Power.summary) + geom_bar(stat="identity", aes(x=Power, y=Obs.Claim.Frequency, fill=Power)) + 
+  geom_line(aes(x = as.numeric(Power),y=portfolio.cf), color="red") + guides(fill=FALSE)
 ```
 
 <img src="intro_files/figure-markdown_github/unnamed-chunk-19-1.png" style="display: block; margin: auto;" />
@@ -489,13 +522,12 @@ ggplot(dataset, aes(x = CarAge)) + geom_bar() + xlab("Age of the Car")
 <img src="intro_files/figure-markdown_github/unnamed-chunk-20-1.png" style="display: block; margin: auto;" /> Again, here, the exposures are not considered on the histogram. We can use *ddply* to correct this.
 
 ``` r
-CarAge.summary = ddply(dataset, .(CarAge), summarize, totalExposure = sum(Exposure), 
-    Number.Observations = length(Exposure))
+CarAge.summary = ddply(dataset, .(CarAge), summarize, totalExposure = sum(Exposure), Number.Observations = length(Exposure))
 CarAge.summary
 ```
 
-<!-- html table generated in R 3.4.3 by xtable 1.8-2 package -->
-<!-- Tue Aug 07 08:59:08 2018 -->
+<!-- html table generated in R 3.5.1 by xtable 1.8-2 package -->
+<!-- Mon Aug 13 16:48:57 2018 -->
 <table border="1">
 <tr>
 <th>
@@ -798,8 +830,7 @@ Number.Observations
 Then, we can plot the data onto a barplot, as before.
 
 ``` r
-ggplot(CarAge.summary, aes(x = CarAge, y = totalExposure)) + geom_bar(stat = "identity") + 
-    ylab("Exposure in years")
+ggplot(CarAge.summary, aes(x=CarAge, y=totalExposure)) + geom_bar(stat='identity') + ylab("Exposure in years")
 ```
 
 <img src="intro_files/figure-markdown_github/unnamed-chunk-23-1.png" style="display: block; margin: auto;" />
@@ -807,8 +838,7 @@ ggplot(CarAge.summary, aes(x = CarAge, y = totalExposure)) + geom_bar(stat = "id
 We can see a large difference, specially for new cars, which makes sense ! Indeed, let us look at the Exposure for new vehicles, using a boxplot for instance.
 
 ``` r
-ggplot(dataset[dataset$CarAge == 0, ], aes(x = "Exposure", y = Exposure)) + 
-    geom_boxplot() + ggtitle("Exposure of new cars")
+ggplot(dataset[dataset$CarAge==0,], aes(x="Exposure", y=Exposure)) + geom_boxplot() +ggtitle("Exposure of new cars")
 ```
 
 <img src="intro_files/figure-markdown_github/unnamed-chunk-24-1.png" style="display: block; margin: auto;" />
@@ -816,13 +846,12 @@ ggplot(dataset[dataset$CarAge == 0, ], aes(x = "Exposure", y = Exposure)) +
 Let us now also compute the claim frequency by age of car,
 
 ``` r
-CarAge.summary = ddply(dataset, .(CarAge), summarize, totalExposure = sum(Exposure), 
-    Number.Observations = length(Exposure), Number.Claims = sum(ClaimNb), Obs.Claim.Freq = sum(ClaimNb)/sum(Exposure))
+CarAge.summary = ddply(dataset, .(CarAge), summarize, totalExposure = sum(Exposure), Number.Observations = length(Exposure), Number.Claims = sum(ClaimNb), Obs.Claim.Freq = sum(ClaimNb)/sum(Exposure))
 CarAge.summary
 ```
 
-<!-- html table generated in R 3.4.3 by xtable 1.8-2 package -->
-<!-- Tue Aug 07 08:59:10 2018 -->
+<!-- html table generated in R 3.5.1 by xtable 1.8-2 package -->
+<!-- Mon Aug 13 16:48:59 2018 -->
 <table border="1">
 <tr>
 <th>
@@ -1287,8 +1316,7 @@ Obs.Claim.Freq
 and plot it!
 
 ``` r
-ggplot(CarAge.summary, aes(x = CarAge, y = Obs.Claim.Freq)) + geom_point() + 
-    ylab("Observed Claim Frequency") + xlab("Age of the Car") + ylim(c(0, 0.08))
+ggplot(CarAge.summary, aes(x=CarAge, y=Obs.Claim.Freq)) + geom_point() + ylab("Observed Claim Frequency")+xlab("Age of the Car") +ylim(c(0,0.08))
 ```
 
 <img src="intro_files/figure-markdown_github/unnamed-chunk-27-1.png" style="display: block; margin: auto;" />
@@ -1304,8 +1332,8 @@ DriverAge.summary = ddply(dataset, .(DriverAge), summarize, totalExposure = sum(
 head(DriverAge.summary, 9)
 ```
 
-<!-- html table generated in R 3.4.3 by xtable 1.8-2 package -->
-<!-- Tue Aug 07 08:59:11 2018 -->
+<!-- html table generated in R 3.5.1 by xtable 1.8-2 package -->
+<!-- Mon Aug 13 16:49:00 2018 -->
 <table border="1">
 <tr>
 <th>
@@ -1481,8 +1509,7 @@ Obs.Claim.Freq
 We can show the Exposures by Age of the Driver
 
 ``` r
-ggplot(DriverAge.summary, aes(x = DriverAge, y = totalExposure)) + geom_bar(stat = "identity", 
-    width = 0.8) + ylab("Exposure in years") + xlab("Age of the Driver")
+ggplot(DriverAge.summary, aes(x=DriverAge, y=totalExposure)) + geom_bar(stat='identity', width=0.8) + ylab("Exposure in years")+xlab("Age of the Driver")
 ```
 
 <img src="intro_files/figure-markdown_github/unnamed-chunk-30-1.png" style="display: block; margin: auto;" />
@@ -1490,8 +1517,7 @@ ggplot(DriverAge.summary, aes(x = DriverAge, y = totalExposure)) + geom_bar(stat
 and the observed claim frequency by Age.
 
 ``` r
-ggplot(DriverAge.summary, aes(x = DriverAge, y = Obs.Claim.Freq)) + geom_point() + 
-    ylab("Observed Claim Frequency") + xlab("Age of the Driver")
+ggplot(DriverAge.summary, aes(x=DriverAge, y=Obs.Claim.Freq)) + geom_point()+ylab("Observed Claim Frequency") + xlab("Age of the Driver")
 ```
 
 <img src="intro_files/figure-markdown_github/unnamed-chunk-31-1.png" style="display: block; margin: auto;" />
@@ -1514,13 +1540,12 @@ levels(dataset$Brand)
     ## [7] "Volkswagen, Audi, Skoda or Seat"
 
 ``` r
-Brand.summary = ddply(dataset, .(Brand), summarize, totalExposure = sum(Exposure), 
-    Number.Observations = length(Exposure), Number.Claims = sum(ClaimNb), Obs.Claim.Freq = sum(ClaimNb)/sum(Exposure))
+Brand.summary = ddply(dataset, .(Brand), summarize, totalExposure = sum(Exposure), Number.Observations = length(Exposure), Number.Claims = sum(ClaimNb), Obs.Claim.Freq = sum(ClaimNb)/sum(Exposure))
 Brand.summary
 ```
 
-<!-- html table generated in R 3.4.3 by xtable 1.8-2 package -->
-<!-- Tue Aug 07 08:59:14 2018 -->
+<!-- html table generated in R 3.5.1 by xtable 1.8-2 package -->
+<!-- Mon Aug 13 16:49:02 2018 -->
 <table border="1">
 <tr>
 <th>
@@ -1661,9 +1686,9 @@ Volkswagen, Audi, Skoda or Seat
 </table>
 ``` r
 require(ggplot2)
-ggplot(Brand.summary, aes(x = reorder(Brand, totalExposure), y = totalExposure, 
-    fill = Brand)) + geom_bar(stat = "identity") + coord_flip() + guides(fill = FALSE) + 
-    xlab("") + ylab("Exposure in years")
+ggplot(Brand.summary, aes(x=reorder(Brand,totalExposure), y=totalExposure, fill=Brand)) +
+  geom_bar(stat='identity') +
+  coord_flip()+guides(fill=FALSE)+xlab("")+ylab("Exposure in years")
 ```
 
 <img src="intro_files/figure-markdown_github/unnamed-chunk-35-1.png" style="display: block; margin: auto;" />
@@ -1671,9 +1696,9 @@ ggplot(Brand.summary, aes(x = reorder(Brand, totalExposure), y = totalExposure,
 Let us now look at the claim frequency by Brand of the car.
 
 ``` r
-ggplot(Brand.summary, aes(x = reorder(Brand, Obs.Claim.Freq), y = Obs.Claim.Freq, 
-    fill = Brand)) + geom_bar(stat = "identity") + coord_flip() + guides(fill = FALSE) + 
-    ggtitle("Observed Claim Frequencies by Brand of the car") + xlab("") + ylab("Observed Claim Frequency")
+ggplot(Brand.summary, aes(x=reorder(Brand,Obs.Claim.Freq), y=Obs.Claim.Freq, fill=Brand)) +
+  geom_bar(stat='identity') +
+  coord_flip()+guides(fill=FALSE)+ ggtitle("Observed Claim Frequencies by Brand of the car")+xlab("")+ylab("Observed Claim Frequency")
 ```
 
 <img src="intro_files/figure-markdown_github/unnamed-chunk-36-1.png" style="display: block; margin: auto;" />
@@ -1690,10 +1715,8 @@ levels(dataset$Gas)
     ## [1] "Diesel"  "Regular"
 
 ``` r
-Gas.summary = ddply(dataset, .(Gas), summarize, totalExposure = sum(Exposure), 
-    Number.Observations = length(Exposure), Number.Claims = sum(ClaimNb), Obs.Claim.Freq = sum(ClaimNb)/sum(Exposure))
-ggplot(Gas.summary, aes(x = Gas, y = totalExposure, fill = Gas)) + geom_bar(stat = "identity") + 
-    guides(fill = FALSE)
+Gas.summary = ddply(dataset, .(Gas), summarize, totalExposure = sum(Exposure), Number.Observations = length(Exposure), Number.Claims = sum(ClaimNb), Obs.Claim.Freq = sum(ClaimNb)/sum(Exposure))
+ggplot(Gas.summary, aes(x=Gas, y=totalExposure, fill=Gas)) + geom_bar(stat="identity") + guides(fill=FALSE)
 ```
 
 <img src="intro_files/figure-markdown_github/unnamed-chunk-38-1.png" style="display: block; margin: auto;" />
@@ -1701,8 +1724,7 @@ ggplot(Gas.summary, aes(x = Gas, y = totalExposure, fill = Gas)) + geom_bar(stat
 There seems to be a similar amount of Diesel and Regular gas vehicles in the portfolio. It is generally expected that Diesel have a higher claim frequency. Does this also hold on our dataset ?
 
 ``` r
-ggplot(Gas.summary, aes(x = Gas, y = Obs.Claim.Freq, fill = Gas)) + geom_bar(stat = "identity") + 
-    guides(fill = FALSE)
+ggplot(Gas.summary, aes(x=Gas, y=Obs.Claim.Freq, fill=Gas)) + geom_bar(stat="identity") + guides(fill=FALSE)
 ```
 
 <img src="intro_files/figure-markdown_github/unnamed-chunk-39-1.png" style="display: block; margin: auto;" />
@@ -1721,13 +1743,12 @@ levels(dataset$Region)
 What are the Exposures in each region ? What are the observed claim frequencies ?
 
 ``` r
-Region.summary = ddply(dataset, .(Region), summarize, totalExposure = sum(Exposure), 
-    Number.Observations = length(Exposure), Number.Claims = sum(ClaimNb), Obs.Claim.Freq = sum(ClaimNb)/sum(Exposure))
+Region.summary = ddply(dataset, .(Region), summarize, totalExposure = sum(Exposure), Number.Observations = length(Exposure), Number.Claims = sum(ClaimNb), Obs.Claim.Freq = sum(ClaimNb)/sum(Exposure))
 Region.summary
 ```
 
-<!-- html table generated in R 3.4.3 by xtable 1.8-2 package -->
-<!-- Tue Aug 07 08:59:18 2018 -->
+<!-- html table generated in R 3.5.1 by xtable 1.8-2 package -->
+<!-- Mon Aug 13 16:49:06 2018 -->
 <table border="1">
 <tr>
 <th>
@@ -1920,9 +1941,8 @@ R74
 Using the function *twoord.plot* we can easily show both the Exposures and the observed claim frequencies on the same plot.
 
 ``` r
-twoord.plot(1:10, Region.summary$totalExposure, 1:10, Region.summary$Obs.Claim.Freq, 
-    xlab = "Region", rylim = c(0, 0.1), type = c("bar", "p"), xticklab = Region.summary$Region, 
-    ylab = "Exposure", rylab = "Observed Claim Frequency")
+twoord.plot(1:10,Region.summary$totalExposure,1:10,Region.summary$Obs.Claim.Freq,xlab="Region",
+rylim=c(0,0.1),type=c("bar","p"), xticklab = Region.summary$Region, ylab = "Exposure", rylab = "Observed Claim Frequency")
 ```
 
 <img src="intro_files/figure-markdown_github/unnamed-chunk-43-1.png" style="display: block; margin: auto;" />
@@ -1930,23 +1950,30 @@ twoord.plot(1:10, Region.summary$totalExposure, 1:10, Region.summary$Obs.Claim.F
 We can plot a map with the observed claim frequencies
 
 ``` r
-library(maptools)
-library(ggplot2)
-area <- readShapePoly("shapefiles/FRA_adm2.shp")  # From http://www.diva-gis.org/gData
+# Download shapefile from  http://www.diva-gis.org/gData
+# Extract all the files from the zip files, in a directory called shapefiles in your working directory
+area <- rgdal::readOGR("shapefiles/FRA_adm2.shp") # From http://www.diva-gis.org/gData
+```
 
+    ## OGR data source with driver: ESRI Shapefile 
+    ## Source: "C:\Users\pechonf\Documents\Summer School Lausanne\UseR\1 - Introduction & Descriptive Analysis\shapefiles\FRA_adm2.shp", layer: "FRA_adm2"
+    ## with 96 features
+    ## It has 11 fields
+    ## Integer64 fields read as strings:  ID_0 ID_1 ID_2
+
+``` r
 Region.summary$id = sapply(Region.summary$Region, substr, 2, 3)
-area.points = fortify(area, region = "ID_2")
+area.points = fortify(area, region="ID_2") #Convert to data.frame
 
-area.points = merge(area.points, Region.summary[, c("id", "totalExposure", "Obs.Claim.Freq")], 
-    by.x = "id", by.y = "id", all.x = TRUE)
-area.points = area.points[order(area.points$order), ]
-
+area.points = merge(area.points, Region.summary[,c("id","totalExposure","Obs.Claim.Freq")], by.x = "id", by.y = "id", all.x=TRUE)
+area.points = area.points[order(area.points$order),] #Has to be ordered correctly to plot.
 
 
-ggplot(area.points, aes(long, lat, group = group)) + ggtitle("Observed Claim Frequencies") + 
-    geom_polygon(aes(fill = area.points$Obs.Claim.Freq)) + scale_fill_gradient(low = "yellow", 
-    high = "red", name = "Obs. Claim Freq.", limits = c(0.061, 0.085)) + xlab("Longitude") + 
-    ylab("Latitude")
+
+ggplot(area.points, aes(long, lat, group=group)) + ggtitle("Observed Claim Frequencies")+
+  geom_polygon(aes(fill = area.points$Obs.Claim.Freq))+
+  scale_fill_gradient(low = "yellow", high = "red", name="Obs. Claim Freq.", limits= c(0.061,0.085))+
+xlab("Longitude") + ylab("Latitude")
 ```
 
 <img src="intro_files/figure-markdown_github/unnamed-chunk-44-1.png" style="display: block; margin: auto;" />
@@ -1954,9 +1981,10 @@ ggplot(area.points, aes(long, lat, group = group)) + ggtitle("Observed Claim Fre
 and the exposures (on a log-scale)...
 
 ``` r
-ggplot(area.points, aes(long, lat, group = group)) + ggtitle("log Exposures in years") + 
-    geom_polygon(aes(fill = log(area.points$totalExposure))) + scale_fill_gradient(low = "blue", 
-    high = "red", name = "log Exposure") + xlab("Longitude") + ylab("Latitude")
+ggplot(area.points, aes(long, lat, group=group)) + ggtitle("log Exposures in years")+
+  geom_polygon(aes(fill = log(area.points$totalExposure)))+
+  scale_fill_gradient(low = "blue", high = "red", name="log Exposure")+
+xlab("Longitude") + ylab("Latitude")
 ```
 
 <img src="intro_files/figure-markdown_github/unnamed-chunk-45-1.png" style="display: block; margin: auto;" />
@@ -1974,7 +2002,7 @@ summary(dataset$Density)
     ##       2      67     287    1982    1408   27000
 
 ``` r
-ggplot(dataset, aes(Density)) + geom_histogram(bins = 200)
+ggplot(dataset, aes(Density)) + geom_histogram(bins=200)
 ```
 
 <img src="intro_files/figure-markdown_github/unnamed-chunk-46-1.png" style="display: block; margin: auto;" />
@@ -1988,13 +2016,12 @@ length(unique(dataset$Density))
 We can compute this by using the command above, and we get 1267.
 
 ``` r
-Density.summary = ddply(dataset, .(Density), summarize, totalExposure = sum(Exposure), 
-    Number.Observations = length(Exposure), Number.Claims = sum(ClaimNb), Obs.Claim.Freq = sum(ClaimNb)/sum(Exposure))
+Density.summary = ddply(dataset, .(Density), summarize, totalExposure = sum(Exposure), Number.Observations = length(Exposure), Number.Claims = sum(ClaimNb), Obs.Claim.Freq = sum(ClaimNb)/sum(Exposure))
 head(Density.summary)
 ```
 
-<!-- html table generated in R 3.4.3 by xtable 1.8-2 package -->
-<!-- Tue Aug 07 08:59:32 2018 -->
+<!-- html table generated in R 3.5.1 by xtable 1.8-2 package -->
+<!-- Mon Aug 13 16:49:20 2018 -->
 <table border="1">
 <tr>
 <th>
@@ -2119,7 +2146,7 @@ Obs.Claim.Freq
 We can plot the observed claim frequencies...
 
 ``` r
-ggplot(Density.summary, aes(x = Density, y = Obs.Claim.Freq)) + geom_point()
+ggplot(Density.summary, aes(x=Density, y=Obs.Claim.Freq)) + geom_point()
 ```
 
 <img src="intro_files/figure-markdown_github/unnamed-chunk-50-1.png" style="display: block; margin: auto;" />
@@ -2129,8 +2156,8 @@ ggplot(Density.summary, aes(x = Density, y = Obs.Claim.Freq)) + geom_point()
 We can categorize the variable using the function *cut*.
 
 ``` r
-dataset$DensityCAT = cut(dataset$Density, breaks = quantile(dataset$Density, 
-    probs = seq(from = 0, to = 1, by = 0.1)), include.lowest = TRUE)
+dataset$DensityCAT = cut(dataset$Density, breaks = quantile(dataset$Density, probs = seq(from = 0, to = 1, by=0.1)),
+                         include.lowest = TRUE)
 table(dataset$DensityCAT)
 ```
 
@@ -2151,13 +2178,12 @@ levels(dataset$DensityCAT) <- LETTERS[1:10]
 Then, we can apply the same strategy as above.
 
 ``` r
-Density.summary = ddply(dataset, .(DensityCAT), summarize, totalExposure = sum(Exposure), 
-    Number.Observations = length(Exposure), Number.Claims = sum(ClaimNb), Obs.Claim.Freq = sum(ClaimNb)/sum(Exposure))
+Density.summary = ddply(dataset, .(DensityCAT), summarize, totalExposure = sum(Exposure), Number.Observations = length(Exposure), Number.Claims = sum(ClaimNb), Obs.Claim.Freq = sum(ClaimNb)/sum(Exposure))
 Density.summary
 ```
 
-<!-- html table generated in R 3.4.3 by xtable 1.8-2 package -->
-<!-- Tue Aug 07 08:59:34 2018 -->
+<!-- html table generated in R 3.5.1 by xtable 1.8-2 package -->
+<!-- Mon Aug 13 16:49:21 2018 -->
 <table border="1">
 <tr>
 <th>
@@ -2350,11 +2376,8 @@ J
 Using the function *twoord.plot* we can easily show both the Exposures and the observed claim frequencies on the same plot.
 
 ``` r
-twoord.plot(1:10, Density.summary$totalExposure, 1:10, Density.summary$Obs.Claim.Freq, 
-    xlab = "Density (categorized)", lylim = c(0, 15000), rylim = c(0, 0.15), 
-    type = c("bar", "p"), xticklab = Density.summary$Density, ylab = "Exposure", 
-    rylab = "Observed Claim Frequency", lytickpos = seq(0, 15000, 5000), rytickpos = seq(0, 
-        0.15, 0.03))
+twoord.plot(1:10,Density.summary$totalExposure,1:10,Density.summary$Obs.Claim.Freq,xlab="Density (categorized)", lylim=c(0,15000),
+rylim=c(0,0.15),type=c("bar","p"), xticklab = Density.summary$Density, ylab = "Exposure", rylab = "Observed Claim Frequency", lytickpos=seq(0,15000,5000), rytickpos=seq(0,0.15,0.03))
 ```
 
 <img src="intro_files/figure-markdown_github/unnamed-chunk-54-1.png" style="display: block; margin: auto;" />

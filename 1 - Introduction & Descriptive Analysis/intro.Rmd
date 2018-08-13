@@ -12,20 +12,27 @@ output:
   github_document:
         toc: true
 ---
-```{r, include=FALSE}
+```{r, include=TRUE, message=FALSE, warning=FALSE}
 options(encoding = 'UTF-8')
 #Loading all the necessary packages
 if (!require("CASdatasets")) install.packages("CASdatasets")
 if (!require("caret")) install.packages("caret")
+if (!require("ggplot2")) install.packages("ggplot2")
 if (!require("mgcv")) install.packages("mgcv")
 if (!require("plyr")) install.packages("plyr")
 if (!require("gridExtra")) install.packages("gridExtra")
 if (!require("visreg")) install.packages("visreg")
 if (!require("MASS")) install.packages("MASS")
 if (!require("plotrix")) install.packages("plotrix")
+if (!require("rgeos")) install.packages("rgeos", type="source")
+if (!require("rgdal")) install.packages("rgdal", type="source")
+if (!require("xtable")) install.packages("xtable")
+if (!require("maptools")) install.packages("maptools")
+
 
 
 require("CASdatasets")
+require("ggplot2")
 require("mgcv")
 require("caret")
 require("gridExtra")
@@ -33,8 +40,10 @@ require("plyr")
 require("visreg")
 require("MASS")
 require("plotrix")
-
-
+require("rgdal")
+require("rgeos")
+require("xtable")
+require("maptools")
 ```
 
 ```{r set-options, echo=FALSE, cache=FALSE}
@@ -49,6 +58,7 @@ data("freMTPLfreq")
 
 freMTPLfreq = subset(freMTPLfreq, Exposure<=1 & Exposure >= 0 & CarAge<=25)
 
+# Subsample of the whole dataset
 set.seed(85)
 require("caret")
 folds = createDataPartition(freMTPLfreq$ClaimNb, 0.5)
@@ -316,15 +326,16 @@ rylim=c(0,0.1),type=c("bar","p"), xticklab = Region.summary$Region, ylab = "Expo
 We can plot a map with the observed claim frequencies
 
 ```{r, message=FALSE, fig.align='center', warning=FALSE, dpi=500, tidy=TRUE}
-library(maptools)
-library(ggplot2)
-area <- readShapePoly("shapefiles/FRA_adm2.shp") # From http://www.diva-gis.org/gData
+# Download shapefile from  http://www.diva-gis.org/gData
+# Extract all the files from the zip files, in a directory called shapefiles in your working directory
+area <- rgdal::readOGR("shapefiles/FRA_adm2.shp") # From http://www.diva-gis.org/gData
+
 
 Region.summary$id = sapply(Region.summary$Region, substr, 2, 3)
-area.points = fortify(area, region="ID_2")
+area.points = fortify(area, region="ID_2") #Convert to data.frame
 
 area.points = merge(area.points, Region.summary[,c("id","totalExposure","Obs.Claim.Freq")], by.x = "id", by.y = "id", all.x=TRUE)
-area.points = area.points[order(area.points$order),]
+area.points = area.points[order(area.points$order),] #Has to be ordered correctly to plot.
 
 
 
