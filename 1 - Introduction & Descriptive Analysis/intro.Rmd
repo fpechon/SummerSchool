@@ -1,0 +1,404 @@
+---
+title: "Brief Introduction to R and Descriptive Analysis of the Dataset"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true    
+    theme: united
+    highlight: tango
+    code_folding: show
+    keep_md: false
+  github_document:
+        toc: true
+---
+```{r, include=FALSE}
+options(encoding = 'UTF-8')
+#Loading all the necessary packages
+if (!require("CASdatasets")) install.packages("CASdatasets")
+if (!require("caret")) install.packages("caret")
+if (!require("mgcv")) install.packages("mgcv")
+if (!require("plyr")) install.packages("plyr")
+if (!require("gridExtra")) install.packages("gridExtra")
+if (!require("visreg")) install.packages("visreg")
+if (!require("MASS")) install.packages("MASS")
+if (!require("plotrix")) install.packages("plotrix")
+
+
+require("CASdatasets")
+require("mgcv")
+require("caret")
+require("gridExtra")
+require("plyr")
+require("visreg")
+require("MASS")
+require("plotrix")
+
+
+```
+
+```{r set-options, echo=FALSE, cache=FALSE}
+options(width = 75)
+```
+
+# Introduction
+```{r, tidy=TRUE}
+## Loading the dataset
+require("CASdatasets")
+data("freMTPLfreq")
+
+freMTPLfreq = subset(freMTPLfreq, Exposure<=1 & Exposure >= 0 & CarAge<=25)
+
+set.seed(85)
+require("caret")
+folds = createDataPartition(freMTPLfreq$ClaimNb, 0.5)
+dataset = freMTPLfreq[folds[[1]], ]
+save(dataset, file="dataset.RData")
+```
+
+A good idea is to check whether the dataset has been loaded correctly. To do this, the following tools can be used:
+
+ - *head* allows to visualize the first 6 lines of the dataset.
+```{r, tidy=TRUE}
+head(dataset)
+```
+ - *str* allows to see the format of the different variables. We will typically distinguish numerical variables (real numbers or integers) and factors (categorical data).
+```{r, tidy=TRUE}
+str(dataset)
+```
+ - *summary* allows to compute for each variable some summary statistics.
+```{r, tidy=TRUE}
+summary(dataset)
+```
+
+If one needs some *help* on a function, typing a question mark and the name of the function in the console opens the help file of the function. For instance,
+```{r, eval=FALSE, tidy=FALSE}
+?head
+```
+
+
+# Descriptive Analysis of the portfolio
+We will now have a descriptive analysis of the portfolio. The different variables available are *`r names(dataset)`*.
+
+## PolicyID
+The variable *PolicyID* related to a unique identifier of the policy. We can check that every policy appears only once in the dataset
+```{r, tidy=TRUE}
+length(unique(dataset$PolicyID)) == nrow(dataset)
+```
+
+## Exposure in month
+The Exposure reveals the fraction of the year during which the policyholder is in the portfolio. 
+We can compute the total exposure by summing the policyholders' exposures. Here we find `r format(sum(dataset$Exposure))` years.
+
+We can show the number of months of exposure on a table.
+```{r, fig.align='center', tidy=TRUE}
+table(cut(dataset$Exposure, breaks = seq(from = 0, to = 1,by = 1/12), labels = 1:12))
+```
+Using the function *prop.table*, it is possible to represent this information in relative terms
+show the number of months of exposure on a table.
+```{r, fig.align='center', tidy=TRUE}
+round(prop.table(table(cut(dataset$Exposure, breaks = seq(from = 0, to = 1,by = 1/12), labels = 1:12))), 4)
+```
+
+Alternatively, we can use a barplot !
+```{r,fig.align='center', cache=TRUE, tidy=TRUE, dpi=500}
+Exposure.summary = cut(dataset$Exposure, breaks = seq(from = 0, to = 1,by = 1/12))
+levels(Exposure.summary) = 1:12
+ggplot()+geom_bar(aes(x=Exposure.summary)) + xlab("Number of months") + ggtitle("Exposure in months")
+```
+
+## Number of claim : ClaimNb
+```{r,fig.align='center', cache=TRUE, tidy=TRUE, dpi=500}
+ggplot(dataset, aes(x=ClaimNb))+geom_bar()+
+geom_text(stat='count', aes(label=..count..), vjust=-1)+ylim(c(0,210000))+
+  ylab("")+ xlab("Number of Claims")+  ggtitle("Proportion of policies by number of claims")
+```
+
+We can compute the average claim frequency in this portfolio, taking into account the different exposures.
+```{r, results='asis',eval=FALSE, tidy=TRUE}
+sum(dataset$ClaimNb) / sum(dataset$Exposure)
+```
+Here, we obtain **`r round(sum(dataset$ClaimNb) / sum(dataset$Exposure), 4)`**.
+
+Let us now look at the other variables.
+
+## Power
+
+The variable *Power* is a categorized variable, related to the power of the car. The levels of the variable are ordered categorically.
+We can see the different **levels** of a **factor** by using the function *level* in R:
+```{r, echo=TRUE, cache=TRUE, tidy=TRUE}
+levels(dataset$Power)
+```
+
+We can see the number of observations in each level of the variable, by using the function *table*.
+```{r, tidy=TRUE}
+table(dataset$Power)
+```
+Remember however, that in insurance, exposures may differ from one policyholder to another. Hence, the table above, does NOT measure the exposure in each level of the variable *Power*. We can use the function *ddply* to give us the exposure in each level of the variable.
+
+```{r, tidy=TRUE}
+require(plyr)
+Power.summary = ddply(dataset, .(Power), summarize, totalExposure = sum(Exposure), Number.Observations = length(Exposure))
+```
+
+We can show this on a plot as well:
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+ggplot(Power.summary, aes(x=Power, y=totalExposure, fill=Power)) + 
+  geom_bar(stat="identity")+
+  ylab("Exposure in years")+
+  geom_text(stat='identity', aes(label=round(totalExposure, 0), color=Power), vjust=-0.5)+
+  guides(fill=FALSE, color=FALSE)
+```
+
+
+Let us now look at the observed claim frequency in each level
+```{r, tidy=TRUE, results='hide', message=FALSE}
+Power.summary = ddply(dataset, .(Power), summarize, totalExposure = sum(Exposure), Number.Observations = length(Exposure), Number.Claims = sum(ClaimNb), Obs.Claim.Frequency = sum(ClaimNb)/sum(Exposure))
+Power.summary
+```
+```{r, results='asis', warning=FALSE, echo=FALSE, message=FALSE}
+require(xtable)
+print(xtable(Power.summary, digits=c(0,1,2,0,0,5)), type = "html", include.rownames=FALSE)
+```
+
+
+We can compute the ratio to the portfolio claim frequency.
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+portfolio.cf = sum(dataset$ClaimNb)/ sum(dataset$Exposure)
+
+ggplot(Power.summary) + geom_bar(stat="identity", aes(x=Power, y=Obs.Claim.Frequency, fill=Power)) + 
+  geom_line(aes(x = as.numeric(Power),y=portfolio.cf), color="red") + guides(fill=FALSE)
+```
+
+
+## CarAge
+
+The vehicle age, in years. This is the first continuous variable that we encounter (although it only takes discrete values).
+
+```{r, fig.align='center', cache=TRUE, tidy=TRUE, dpi=500}
+ggplot(dataset, aes(x=CarAge)) + geom_bar()  + xlab("Age of the Car")
+```
+Again, here, the exposures are not considered on the histogram. We can use *ddply* to correct this.
+```{r, tidy=TRUE, results='hide'}
+CarAge.summary = ddply(dataset, .(CarAge), summarize, totalExposure = sum(Exposure), Number.Observations = length(Exposure))
+CarAge.summary
+```
+```{r, results='asis', warning=FALSE, echo=FALSE}
+require(xtable)
+print(xtable(CarAge.summary,  digits=c(0,0,2,0)), type = "html", include.rownames=FALSE)
+```
+Then, we can plot the data onto a barplot, as before.
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+ggplot(CarAge.summary, aes(x=CarAge, y=totalExposure)) + geom_bar(stat='identity') + ylab("Exposure in years")
+```
+
+We can see a large difference, specially for new cars, which makes sense ! Indeed, let us look at the Exposure for new vehicles, using a boxplot for instance.
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+ggplot(dataset[dataset$CarAge==0,], aes(x="Exposure", y=Exposure)) + geom_boxplot() +ggtitle("Exposure of new cars")
+```
+
+
+Let us now also compute the claim frequency by age of car,
+```{r, tidy=TRUE, results='hide'}
+CarAge.summary = ddply(dataset, .(CarAge), summarize, totalExposure = sum(Exposure), Number.Observations = length(Exposure), Number.Claims = sum(ClaimNb), Obs.Claim.Freq = sum(ClaimNb)/sum(Exposure))
+CarAge.summary
+```
+```{r, results='asis', warning=FALSE, echo=FALSE}
+require(xtable)
+print(xtable(CarAge.summary,  digits=c(0,1,2,0,0,5)), type = "html",include.rownames=FALSE)
+```
+and plot it!
+
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+ggplot(CarAge.summary, aes(x=CarAge, y=Obs.Claim.Freq)) + geom_point() + ylab("Observed Claim Frequency")+xlab("Age of the Car") +ylim(c(0,0.08))
+
+```
+
+## DriverAge
+Similarly to the Age of the Car, we can visualize the Age of the Drivers.
+```{r, fig.align='center', cache=TRUE, tidy=TRUE, dpi=500, results='hide'}
+DriverAge.summary = ddply(dataset, .(DriverAge), summarize, totalExposure = sum(Exposure), Number.Observations = length(Exposure), Number.Claims = sum(ClaimNb), Obs.Claim.Freq = sum(ClaimNb)/sum(Exposure))
+head(DriverAge.summary,9)
+```
+
+```{r, results='asis', warning=FALSE,echo=FALSE}
+require(xtable)
+print(xtable(head(DriverAge.summary,9), digits=c(0,1,2,0,0,5)), type = "html",include.rownames=FALSE)
+```
+
+
+We can show the Exposures by Age of the Driver
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+ggplot(DriverAge.summary, aes(x=DriverAge, y=totalExposure)) + geom_bar(stat='identity', width=0.8) + ylab("Exposure in years")+xlab("Age of the Driver")
+```
+
+and the observed claim frequency by Age.
+```{r, fig.align="center", dpi=500, tidy=TRUE}
+ggplot(DriverAge.summary, aes(x=DriverAge, y=Obs.Claim.Freq)) + geom_point()+ylab("Observed Claim Frequency") + xlab("Age of the Driver")
+```
+
+## Brand
+The variable *Brand* is a categorized variable, related to the brand of the car. 
+We can see the different *levels* of a *factor* by using the function **level** in R:
+```{r, tidy=TRUE}
+levels(dataset$Brand)
+```
+
+
+```{r, echo=TRUE, tidy=TRUE, results='hide'}
+Brand.summary = ddply(dataset, .(Brand), summarize, totalExposure = sum(Exposure), Number.Observations = length(Exposure), Number.Claims = sum(ClaimNb), Obs.Claim.Freq = sum(ClaimNb)/sum(Exposure))
+Brand.summary
+```
+
+```{r, results='asis', warning=FALSE, echo=FALSE}
+require(xtable)
+print(xtable(Brand.summary,  digits=c(0,1,2,0,0,5)), type = "html", include.rownames=FALSE)
+```
+
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+require(ggplot2)
+ggplot(Brand.summary, aes(x=reorder(Brand,totalExposure), y=totalExposure, fill=Brand)) +
+  geom_bar(stat='identity') +
+  coord_flip()+guides(fill=FALSE)+xlab("")+ylab("Exposure in years")
+```
+
+Let us now look at the claim frequency by Brand of the car.
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+ggplot(Brand.summary, aes(x=reorder(Brand,Obs.Claim.Freq), y=Obs.Claim.Freq, fill=Brand)) +
+  geom_bar(stat='identity') +
+  coord_flip()+guides(fill=FALSE)+ ggtitle("Observed Claim Frequencies by Brand of the car")+xlab("")+ylab("Observed Claim Frequency")
+```
+
+## Gas
+The variable *Gas* is a categorized variable, related to the fuel of the car. 
+We can see the different *levels* of a *factor* by using the function **level** in R:
+```{r, echo=TRUE, cache=TRUE, tidy=TRUE}
+levels(dataset$Gas)
+```
+
+```{r, echo=TRUE, fig.align='center', dpi=500, tidy=TRUE}
+Gas.summary = ddply(dataset, .(Gas), summarize, totalExposure = sum(Exposure), Number.Observations = length(Exposure), Number.Claims = sum(ClaimNb), Obs.Claim.Freq = sum(ClaimNb)/sum(Exposure))
+ggplot(Gas.summary, aes(x=Gas, y=totalExposure, fill=Gas)) + geom_bar(stat="identity") + guides(fill=FALSE)
+```
+
+There seems to be a similar amount of Diesel and Regular gas vehicles in the portfolio.
+It is generally expected that Diesel have a higher claim frequency. Does this also hold on our dataset ?
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+ggplot(Gas.summary, aes(x=Gas, y=Obs.Claim.Freq, fill=Gas)) + geom_bar(stat="identity") + guides(fill=FALSE)
+```
+
+## Region
+The variable *Region* is a categorized variable, related to the region of the place of residence. 
+We can see the different *levels* of a *factor* by using the function **level** in R:
+```{r, echo=TRUE, cache=TRUE, tidy=TRUE}
+levels(dataset$Region)
+```
+
+What are the Exposures in each region ? What are the observed claim frequencies ?
+
+```{r, tidy=TRUE, results='hide'}
+Region.summary = ddply(dataset, .(Region), summarize, totalExposure = sum(Exposure), Number.Observations = length(Exposure), Number.Claims = sum(ClaimNb), Obs.Claim.Freq = sum(ClaimNb)/sum(Exposure))
+Region.summary
+```
+
+```{r, results='asis', echo=FALSE}
+print(xtable(Region.summary, digits=c(0,1,2,0,0,5)), type="html", include.rownames=FALSE)
+```
+
+
+Using the function *twoord.plot* we can easily show both the Exposures and the observed claim frequencies on the same plot.
+
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+twoord.plot(1:10,Region.summary$totalExposure,1:10,Region.summary$Obs.Claim.Freq,xlab="Region",
+rylim=c(0,0.1),type=c("bar","p"), xticklab = Region.summary$Region, ylab = "Exposure", rylab = "Observed Claim Frequency")
+```
+
+We can plot a map with the observed claim frequencies
+
+```{r, message=FALSE, fig.align='center', warning=FALSE, dpi=500, tidy=TRUE}
+library(maptools)
+library(ggplot2)
+area <- readShapePoly("shapefiles/FRA_adm2.shp") # From http://www.diva-gis.org/gData
+
+Region.summary$id = sapply(Region.summary$Region, substr, 2, 3)
+area.points = fortify(area, region="ID_2")
+
+area.points = merge(area.points, Region.summary[,c("id","totalExposure","Obs.Claim.Freq")], by.x = "id", by.y = "id", all.x=TRUE)
+area.points = area.points[order(area.points$order),]
+
+
+
+ggplot(area.points, aes(long, lat, group=group)) + ggtitle("Observed Claim Frequencies")+
+  geom_polygon(aes(fill = area.points$Obs.Claim.Freq))+
+  scale_fill_gradient(low = "yellow", high = "red", name="Obs. Claim Freq.", limits= c(0.061,0.085))+
+xlab("Longitude") + ylab("Latitude")
+```
+
+and the exposures (on a log-scale)...
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+ggplot(area.points, aes(long, lat, group=group)) + ggtitle("log Exposures in years")+
+  geom_polygon(aes(fill = log(area.points$totalExposure)))+
+  scale_fill_gradient(low = "blue", high = "red", name="log Exposure")+
+xlab("Longitude") + ylab("Latitude")
+```
+
+
+
+## Density
+The Density represents here the density of the population at the place of residence.
+Let us take a look at the densities in the dataset.
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+summary(dataset$Density)
+ggplot(dataset, aes(Density)) + geom_histogram(bins=200)
+```
+
+Here, contrary to the age of the driver, or the age of the car, the density has lots of different values
+```{r, eval=FALSE, tidy=TRUE}
+length(unique(dataset$Density))
+```
+
+We can compute this by using the command above, and we get `r length(unique(dataset$Density))`.
+```{r, tidy=TRUE, results='hide'}
+Density.summary = ddply(dataset, .(Density), summarize, totalExposure = sum(Exposure), Number.Observations = length(Exposure), Number.Claims = sum(ClaimNb), Obs.Claim.Freq = sum(ClaimNb)/sum(Exposure))
+head(Density.summary)
+```
+
+```{r, results='asis', echo=FALSE, fig.align='center'}
+print(xtable(head(Density.summary), digits=c(0,1,2,0,0,5)), type="html", include.rownames=FALSE)
+```
+
+We can plot the observed claim frequencies...
+
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+ggplot(Density.summary, aes(x=Density, y=Obs.Claim.Freq)) + geom_point()
+```
+
+... but realize it is impossible to see a trend. One way out is to categorize the variable. We will see later (GAM) that it is possible to estimate a smooth function, which avoid the arbitrary categorization.
+
+We can categorize the variable using the function *cut*.
+```{r, tidy=TRUE}
+dataset$DensityCAT = cut(dataset$Density, breaks = quantile(dataset$Density, probs = seq(from = 0, to = 1, by=0.1)),
+                         include.lowest = TRUE)
+table(dataset$DensityCAT)
+levels(dataset$DensityCAT) <- LETTERS[1:10]
+```
+Then, we can apply the same strategy as above.
+
+
+```{r, tidy=TRUE, results='hide'}
+Density.summary = ddply(dataset, .(DensityCAT), summarize, totalExposure = sum(Exposure), Number.Observations = length(Exposure), Number.Claims = sum(ClaimNb), Obs.Claim.Freq = sum(ClaimNb)/sum(Exposure))
+Density.summary
+```
+
+```{r, results='asis', echo=FALSE}
+print(xtable(Density.summary, digits=c(0,1,2,0,0,5)), type="html", include.rownames=FALSE)
+```
+
+
+Using the function *twoord.plot* we can easily show both the Exposures and the observed claim frequencies on the same plot.
+
+
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+twoord.plot(1:10,Density.summary$totalExposure,1:10,Density.summary$Obs.Claim.Freq,xlab="Density (categorized)", lylim=c(0,15000),
+rylim=c(0,0.15),type=c("bar","p"), xticklab = Density.summary$Density, ylab = "Exposure", rylab = "Observed Claim Frequency", lytickpos=seq(0,15000,5000), rytickpos=seq(0,0.15,0.03))
+```
