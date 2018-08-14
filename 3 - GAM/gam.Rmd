@@ -1,0 +1,542 @@
+---
+title: "Generalized Additive Models"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true    
+    theme: united
+    highlight: tango
+    code_folding: show
+    keep_md: false
+  github_document:
+        toc: true
+---
+
+# Loading the data and the packages
+First, the packages
+```{r, message=FALSE, warning=FALSE}
+require("CASdatasets") #Not needed if use of dataset.RData
+require("mgcv")
+require("caret")
+require("plyr")
+require("ggplot2")
+require("gridExtra")
+if (!require("parallel")) install.packages("parallel")
+require("parallel")
+```
+then, the data
+```{r}
+# data("freMTPLfreq")
+# freMTPLfreq = subset(freMTPLfreq, Exposure<=1 & Exposure >= 0 & CarAge<=25)
+# 
+# set.seed(85)
+# folds = createDataPartition(freMTPLfreq$ClaimNb, 0.5)
+# dataset = freMTPLfreq[folds[[1]], ]
+load("dataset.RData")
+```
+
+
+Checking that the data is loaded.
+```{r}
+str(dataset)
+```
+
+
+Restore data from GLM session (the variables with the merged levels).
+```{r, tidy=TRUE}
+# Variable Power
+dataset$Power_merged=dataset$Power
+levels(dataset$Power_merged) = list("A"= "d",
+                                         "B" = c("e","f", "g", "h"),
+                                         "C" = c("i","j", "k", "l", "m", "n", "o"))
+dataset$Power_merged=relevel(dataset$Power_merged, ref="B")
+#Variable Region
+dataset$Region_merged = dataset$Region
+levels(dataset$Region_merged)[c(1,5,10)] ="R11-31-74"
+
+#Variable Brand
+dataset$Brand_merged = dataset$Brand
+levels(dataset$Brand_merged) <- list("A" = c("Fiat","Mercedes, Chrysler or BMW",
+                                                  "Opel, General Motors or Ford",
+                                                  "other",
+                                                  "Volkswagen, Audi, Skoda or Seat"),
+                                          "B" = "Japanese (except Nissan) or Korean",
+                                          "C" = "Renault, Nissan or Citroen")
+dataset$Brand_merged = relevel(dataset$Brand_merged, ref="C")
+```
+
+
+
+# Outline of this session.
+
+
+- Illustration of the backfitting algorithm
+- Use of mgcv package
+- When using 'manual backfitting' can be useful
+
+
+
+# Illustration of the backfitting algorithm
+
+## First iteration
+
+- First we start with a Poisson regression with only an intercept.
+```{r}
+
+autofit=dataset #Copy the data
+
+#Model with only an intercept
+require(mgcv) # Load package if not loaded yet.
+fit0<-gam(ClaimNb~1, data=autofit, family=poisson(), offset=log(Exposure))
+
+autofit$fit0=fit0$fitted.values
+head(autofit$fit0)
+```
+- We fit a model with the discrete variables. (e.g. model from the GLM session)
+```{r}
+fit1<-gam(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged,
+         data = autofit,
+         family=poisson(link = log))
+autofit$fit1 = fit1$fitted.values
+```
+
+
+- Let us now consider a continuous covariate: CarAge
+```{r}
+require(plyr)
+mm <- ddply(autofit, .(CarAge), summarise, totalExposure = sum(Exposure), 
+	            totalClaimObs=sum(ClaimNb), totalClaimExp=sum(fit1))	
+head(mm)
+fit2<-gam(totalClaimObs ~ s(CarAge), 
+	          offset=log(totalClaimExp), 
+	          family=poisson(), 
+	          data=mm)
+
+```
+
+- Let us now consider a continuous covariate: CarAge
+
+```{r, fig.align="center", message=FALSE, dpi=500, tidy=TRUE}
+require(visreg)
+visreg(fit2, xvar="CarAge", gg=TRUE, scale = "response") + ylim(c(0.25,1.2)) + ylab("Multiplicative Effect")
+```
+
+
+The new prediction of the claim frequency is now given by the old one times the correction due to CarAge.
+```{r}
+autofit$fit2<-autofit$fit1*predict(fit2, newdata=autofit, type="response")
+```
+The total number of predicted claim remains unchanged:
+```{r, tidy=TRUE}
+c(sum(autofit$fit1), sum(autofit$fit2))
+```
+
+- Let us now consider the other continuous covariate: DriverAge
+```{r, tidy=TRUE}
+mm <- ddply(autofit, .(DriverAge), summarise, totalExposure = sum(Exposure), 
+	            totalClaimObs=sum(ClaimNb), totalClaimExp=sum(fit2))	
+head(mm)
+fit3<-gam(totalClaimObs ~ s(DriverAge), 
+	          offset=log(totalClaimExp), 
+	          family=poisson(), 
+	          data=mm)
+```
+
+- Let us now consider the other continuous covariate: DriverAge
+```{r, fig.align="center", message=FALSE, dpi=500, tidy=TRUE}
+require(visreg)
+visreg(fit3, xvar="DriverAge", gg=TRUE, scale = "response") + ylim(c(0,5)) + ylab("Multiplicative Effect")+
+  scale_x_continuous(name="Age of Driver", limits=c(18, 99), breaks = c(18, seq(20,95,5),99))
+```
+
+
+The new prediction of the claim frequency is now given by the old one times the correction due to DriverAge.
+```{r, tidy=TRUE}
+autofit$fit3<-autofit$fit2*predict(fit3, newdata=autofit, type="response")
+```
+The total expected number of claims remains unchanged.
+```{r, tidy=TRUE}
+c(sum(autofit$fit2),sum(autofit$fit3))
+```
+
+
+Let us compute the log-likelihood 
+```{r, tidy=TRUE}
+LL0=sum(dpois(x=autofit$ClaimNb, lambda = autofit$fit0, log=TRUE))
+LLi=sum(dpois(x=autofit$ClaimNb, lambda = autofit$fit3, log=TRUE))
+c(LL0, LLi)
+```
+
+## Further iterations
+Let us now iterate, and fit again the discrete variables, then CarAge, then DriverAge, and let us stop when the log-likelihood change is smaller than some small epsilon. When we fit the model, everything that has been fitted before and is unrelated to the current variable is put in the offset.
+```{r, tidy=TRUE}
+	epsilon=1e-8
+	i=0
+	fit_it_discr=list(fit1)
+	fit_it_CarAge=list(fit2)
+	fit_it_DriverAge=list(fit3)
+
+	while (abs(LL0/LLi-1)>epsilon){
+	  i=i+1
+	  LL0=LLi
+		#Discrete variables
+	  autofit$logoffset=	predict(fit_it_CarAge[[i]], newdata=autofit)+
+							predict(fit_it_DriverAge[[i]], newdata=autofit)+
+							log(autofit$Exposure)
+	  fit_it_discr[[i+1]]<-gam(ClaimNb~ Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged, 
+	                           autofit, family=poisson(), offset = logoffset)
+
+	  #CarAge
+	  autofit$logoffset=predict(fit_it_discr[[i+1]], newdata=autofit)+
+							predict(fit_it_DriverAge[[i]], newdata=autofit)+
+							log(autofit$Exposure)
+	  mm <- ddply(autofit, .(CarAge), summarise,  
+	              totalClaimObs=sum(ClaimNb), totalClaimExp=sum(exp(logoffset)))	
+	  fit_it_CarAge[[i+1]]<-gam(totalClaimObs ~ s(CarAge), 
+	                           offset=log(totalClaimExp), family=poisson(), data=mm)
+	  
+	  #DriverAge
+		autofit$logoffset=predict(fit_it_discr[[i+1]], newdata=autofit)+
+							predict(fit_it_CarAge[[i+1]], newdata=autofit)+
+							log(autofit$Exposure)
+		mm <- ddply(autofit, .(DriverAge), summarise, totalClaimObs=sum(ClaimNb), 
+		            totalClaimExp=sum(exp(logoffset)))	
+		fit_it_DriverAge[[i+1]]<-gam(totalClaimObs ~ s(DriverAge), 
+		                          offset=log(totalClaimExp), family=poisson(), data=mm)
+	  ## Compute the new estimates
+	  
+	  autofit$currentfit=	predict(fit_it_discr[[i+1]], newdata=autofit, type="response")*
+							predict(fit_it_CarAge[[i+1]], newdata=autofit, type="response")*
+							predict(fit_it_DriverAge[[i+1]], newdata=autofit, type="response")*
+							(autofit$Exposure)
+
+
+	  LLi=sum(dpois(x=autofit$ClaimNb, lambda = autofit$currentfit, log=TRUE))
+	  print(c(i, LL0, LLi))
+	}
+```
+
+## Results
+Let us now see the  betas at each iteration.
+
+### Discrete variables
+
+```{r, tidy=TRUE}
+res_discr=matrix(NA, ncol=41, nrow=i+1)
+colnames(res_discr)=names(fit_it_discr[[1]]$coefficients)
+res_discr[1,]=fit_it_discr[[1]]$coefficients
+res_discr[2,]=fit_it_discr[[2]]$coefficients
+res_discr[3,]=fit_it_discr[[3]]$coefficients
+res_discr[4,]=fit_it_discr[[4]]$coefficients
+res_discr[5,]=fit_it_discr[[5]]$coefficients
+res_discr[6,]=fit_it_discr[[6]]$coefficients
+```
+
+For instance, the 9 first variables:
+```{r, tidy=TRUE, dpi=500, fig.align='center', warning=FALSE, message=FALSE}
+require("gridExtra")
+p1= lapply(2:10, function(i){
+  ggplot() + geom_point(aes(y=res_discr[,i], x=1:6)) + xlab("Iteration") + ylab("beta") + ggtitle(names(fit_it_discr[[1]]$coefficients)[i]) + scale_x_continuous(breaks=1:6)
+  })
+do.call(grid.arrange, p1)
+```
+
+### CarAge
+```{r, tidy=TRUE, dpi=500, fig.align='center'}
+CarAge=matrix(NA, ncol=6, nrow=26)
+CarAge[,1]=predict(fit_it_CarAge[[1]], 
+                  data.frame(CarAge=seq(from=0, to=25, by=1)), 	type="response")
+CarAge[,2]=predict(fit_it_CarAge[[2]], 
+                  data.frame(CarAge=seq(from=0, to=25, by=1)), 	type="response")
+CarAge[,3]=predict(fit_it_CarAge[[3]], 
+                  data.frame(CarAge=seq(from=0, to=25, by=1)), 	type="response")
+CarAge[,4]=predict(fit_it_CarAge[[4]], 
+                  data.frame(CarAge=seq(from=0, to=25, by=1)), 	type="response")
+CarAge[,5]=predict(fit_it_CarAge[[5]], 
+                  data.frame(CarAge=seq(from=0, to=25, by=1)), 	type="response")
+CarAge[,6]=predict(fit_it_CarAge[[6]], 
+                  data.frame(CarAge=seq(from=0, to=25, by=1)), 	type="response")                  
+
+x = as.data.frame(CarAge)
+names(x) = sapply(1:6, function(i){ paste("it",i)})
+x = stack(as.data.frame(x))
+names(x)[2] ="Iteration"
+
+ggplot(x) + geom_line(aes(x = rep(0:25, 6),y=values, color=Iteration)) + xlab("Age of the Car") +ylab("Multiplicative Effect")
+```
+
+### DriverAge
+```{r, tidy=TRUE, dpi=500, fig.align='center'}
+DriverAge=matrix(NA, ncol=6, nrow=82)
+DriverAge[,1]=predict(fit_it_DriverAge[[1]], 
+                  data.frame(DriverAge=seq(from=18, to=99, by=1)), 	type="response")
+DriverAge[,2]=predict(fit_it_DriverAge[[2]], 
+                  data.frame(DriverAge=seq(from=18, to=99, by=1)), 	type="response")
+DriverAge[,3]=predict(fit_it_DriverAge[[3]], 
+                  data.frame(DriverAge=seq(from=18, to=99, by=1)), 	type="response")
+DriverAge[,4]=predict(fit_it_DriverAge[[4]], 
+                  data.frame(DriverAge=seq(from=18, to=99, by=1)), 	type="response")
+DriverAge[,5]=predict(fit_it_DriverAge[[5]], 
+                  data.frame(DriverAge=seq(from=18, to=99, by=1)), 	type="response")
+DriverAge[,6]=predict(fit_it_DriverAge[[6]], 
+                  data.frame(DriverAge=seq(from=18, to=99, by=1)), 	type="response")                  
+
+x = as.data.frame(DriverAge)
+names(x) = sapply(1:6, function(i){ paste("it",i)})
+x = stack(as.data.frame(x))
+names(x)[2] ="Iteration"
+
+ggplot(x) + geom_line(aes(x = rep(18:99, 6),y=values, color=Iteration)) + xlab("Age of the Driver") +ylab("Multiplicative Effect")
+```
+
+## Comparison with GAM
+
+Let us now compare with the GAM directly
+```{r, fig.align="center", dpi=500, tidy=TRUE}
+m0_gam = gam(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged+
+               s(DriverAge)+s(CarAge),
+         data = autofit,
+         family=poisson(link = log))
+
+ggplot() + geom_point(aes(x=autofit$currentfit, y=m0_gam$fitted.values))+xlab("Manual backfitting") + ylab("GAM from mgcv")
+```
+
+
+# Use of the mgcv package
+
+First, let us retrieve the training and testing set we used before (in the GLM session).
+```{r, tidy=TRUE}
+set.seed(21)
+in_training = createDataPartition(dataset$ClaimNb, times = 1, p = 0.8, list=FALSE)
+training_set = dataset[in_training,]
+testing_set  = dataset[-in_training,]
+```
+
+The gam function works very similarly to the glm function. The continuous covariate have to be specified using for instance the function s(.). Interaction with respect to a discrete variable can be done by specifying the variable in the 'by' argument (see below).
+
+## First try with gam
+
+Let us start with the model we created above.
+```{r, fig.align="center", tidy=TRUE}
+# Same as above..
+# ptn_0 = Sys.time()
+# m0_gam = gam(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged + s(DriverAge)+s(CarAge),
+#          data = training_set,
+#          family=poisson(link = log))
+# print(Sys.time()-ptn_0)
+```
+
+## Comparison with bam
+
+We see that the computational time is already long, especially if we wanted to use cross-validation. There is also the function *bam*, which is optimized for very large datasets and allows parallel computing.
+
+```{r, tidy=TRUE}
+require(parallel)
+cl = makeCluster(detectCores()-1) # Number of cores to use, for parallel computing.
+ptn_0 = Sys.time()
+m0_bam = bam(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged+s(DriverAge)+s(CarAge),
+         data = training_set,
+         family=poisson(link = log),
+         cluster = cl)
+stopCluster(cl)
+print(Sys.time()-ptn_0)
+```
+
+We can see the fitted function using *plot*,
+```{r, tidy=TRUE, dpi=500, fig.align='center', warning=FALSE}
+par(mfrow=c(1,2))
+plot(m0_bam, trans=exp, scale=0, shade=TRUE)
+```
+
+
+## Bivariate function
+
+We can also include interactions between the two continuous variables. We simply estimate a bivariate function.
+```{r, tidy=TRUE}
+cl = makeCluster(detectCores()-1) # Number of cores to use
+m1_bam = bam(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged+ s(DriverAge) + s(CarAge) + s(DriverAge, CarAge),
+         data = training_set,
+         family=poisson(link = log),
+         cluster = cl)
+stopCluster(cl)
+summary(m1_bam)
+```
+
+The likelihood ratio test still works like in the GLM framework.
+```{r, tidy=TRUE}
+anova(m0_bam, m1_bam, test="Chisq")
+```
+
+## Interaction between a continuous and a discrete variable
+
+To include an interaction with a discrete variable, we can use the *by* argument. For example, between CarAge and Gas:
+```{r, tidy=TRUE}
+cl = makeCluster(detectCores()-1) # Number of cores to use
+m2_bam = bam(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged+s(DriverAge) + s(CarAge, by=Gas),
+         data = training_set,
+         family=poisson(link = log),
+         cluster = cl)
+stopCluster(cl)
+summary(m2_bam)
+```
+
+When we now plot the functions, we obtain **two** functions for *CarAge*.
+```{r, tidy=TRUE, dpi=500, fig.align='center'}
+par(mfrow=c(1,2))
+plot(m2_bam, shade=TRUE, trans=exp, scale=0, select=2)
+plot(m2_bam, shade=TRUE, trans=exp, scale=0, select=3)
+```
+
+We can test if the interaction improves our model.
+
+```{r, tidy=TRUE}
+anova(m0_bam, m2_bam, test="Chisq")
+```
+
+
+```{r, tidy=TRUE, dpi=500, fig.align='center'}
+cl = makeCluster(detectCores()-1) # Number of cores to use
+m3_bam = bam(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged+s(DriverAge, by=Gas)+ s(CarAge),
+         data = training_set,
+         family=poisson(link = log),
+         cluster = cl)
+stopCluster(cl)
+anova(m0_bam, m3_bam, test="Chisq")
+par(mfrow=c(1,2))
+plot(m3_bam, shade=TRUE, trans=exp, scale=-1, select=1)
+plot(m3_bam, shade=TRUE, trans=exp, scale=-1, select=2)
+```
+
+## Cross-validation
+
+We can also use cross-validation to check whether or not to include this variable.
+First we need to create the folds, let's say 5.
+```{r, tidy=TRUE}
+require(caret)
+set.seed(41)
+folds = createFolds(training_set$ClaimNb, k=5)
+res0= lapply(folds, function(X){
+  cl = makeCluster(detectCores()-1) # Number of cores to use
+  m3_bam = bam(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged+ s(DriverAge)+ s(CarAge),
+         data = training_set[-X,],
+         family=poisson(link = log),
+         cluster = cl)
+  stopCluster(cl)
+  pred = predict(m3_bam, training_set[X,], type="response")
+  sum(dpois(x=training_set[X,]$ClaimNb, lambda=pred, log=TRUE))
+  #sum(-pred + training_set[X,]$ClaimNb*log(pred)-log(factorial(training_set[X,]$ClaimNb)))
+})
+
+res3= lapply(folds, function(X){
+  cl = makeCluster(detectCores()-1) # Number of cores to use
+  m3_bam = bam(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged + Brand_merged + Gas + Region_merged * Brand_merged+s(DriverAge, by=Gas)+ s(CarAge),
+         data = training_set[-X,],
+         family=poisson(link = log),
+         cluster = cl)
+  stopCluster(cl)
+  pred = predict(m3_bam, training_set[X,], type="response")
+  sum(dpois(x=training_set[X,]$ClaimNb, lambda=pred, log=TRUE))
+  #sum(-pred + training_set[X,]$ClaimNb*log(pred)-log(factorial(training_set[X,]$ClaimNb)))
+})
+
+cbind(unlist(res0), unlist(res3))
+
+apply(cbind(unlist(res0), unlist(res3)), 2, mean)
+```
+
+There is no improvement with the interaction.
+```{r tidy=TRUE}
+res4= lapply(folds, function(X){
+  cl = makeCluster(detectCores()-1) # Number of cores to use
+  m3_bam = bam(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged + Brand_merged + Gas + Region_merged * Brand_merged+
+               s(DriverAge)+ s(CarAge, by=Power_merged),
+         data = training_set[-X,],
+         family=poisson(link = log),
+         cluster = cl)
+  stopCluster(cl)
+  pred = predict(m3_bam, training_set[X,], type="response")
+  sum(dpois(x=training_set[X,]$ClaimNb, lambda=pred, log=TRUE))
+  #sum(-pred + training_set[X,]$ClaimNb*log(pred)-log(factorial(training_set[X,]$ClaimNb)))
+})
+apply(cbind(unlist(res0), unlist(res3), unlist(res4)), 2, mean)
+```
+
+We conclude here, we did not find any further interactions.
+We can compute the deviance on the validation set
+
+```{r, tidy=TRUE}
+2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m0_bam,testing_set,offset=testing_set$Exposure, type="response"),
+            log=TRUE)))
+```
+
+
+
+## Comparison with best GLM model
+
+Let us compare the predictions between the GLM and the GAM.
+```{r}
+m.glm.5.6 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged,
+         data = training_set,
+         family=poisson(link = log))
+
+testing_set$GLM_pred = predict(m.glm.5.6, testing_set, type="response")
+testing_set$GAM_pred = predict(m0_bam, testing_set, type="response")
+head(testing_set[,c("GLM_pred", "GAM_pred")], n=25)
+```
+
+If we plot the prediction of GLM vs GAM
+
+```{r, dpi=500, fig.align='center'}
+ggplot(testing_set) + geom_point(aes(x=testing_set$GLM_pred, y=testing_set$GAM_pred))+ylab("GAM")+xlab("GLM")+geom_abline(slope=1, intercept=0, color="red")
+```
+
+However, the total amount of expected claims are still close.
+```{r}
+sum(testing_set$GLM_pred) #GLM
+sum(testing_set$GAM_pred) #GAM
+```
+
+
+
+# 'Manual' backfitting
+
+In some cases, calling the *gam* function can be slow, due to the size of the dataset. If the continuous variable has actually only a few values (e.g. ZIP, Age of Driver), it is possible to use some kind of manual backfitting to speed up the computation.
+
+Let us consider this model below:
+```{r, tidy=TRUE, dpi=500, fig.align='center'}
+manual_back_0 = gam(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged,
+         data = training_set,
+         family=poisson(link = log))
+```
+
+We wish to add the continuous covariate DriverAge
+For each value of DriverAge, we can compute the observed number of claims and the expected number of claims.
+```{r, tidy=TRUE, dpi=500, fig.align='center'}
+require(plyr)
+manual = training_set
+manual$pred = predict(manual_back_0, manual, type="response")
+mm = ddply(manual, .(DriverAge), summarise,  
+	              totalClaimObs=sum(ClaimNb), totalClaimExp=sum(pred))
+head(mm)
+dim(mm)
+
+ptn_0 = Sys.time()
+manual_back_1 = gam(ClaimNb ~ offset(log(pred)) + s(DriverAge),
+         data = manual,
+         family=poisson(link = log))
+ptn_1 = Sys.time() - ptn_0
+plot(manual_back_1, shade=TRUE, trans=exp, scale=0)
+```
+
+We can compare to the regular computational time.
+```{r, tidy=TRUE}
+ptn_2 = Sys.time()
+manual_back_2 = bam(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged + s(DriverAge),
+         data = training_set,
+         family=poisson(link = log))
+ptn_3 = Sys.time() - ptn_2
+
+c(ptn_1, ptn_3)
+```
