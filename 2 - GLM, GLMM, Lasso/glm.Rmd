@@ -1,0 +1,423 @@
+---
+title: "GLM, GLMM and LASSO"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true    
+    theme: united
+    highlight: tango
+    code_folding: show
+    keep_md: false
+  github_document:
+        toc: true
+---
+
+
+```{r, include=TRUE, warning=FALSE, message=FALSE}
+options(encoding = 'UTF-8')
+#Loading all the necessary packages
+if (!require("caret")) install.packages("caret")
+if (!require("visreg")) install.packages("visreg")
+if (!require("MASS")) install.packages("MASS")
+if (!require("lme4")) install.packages("lme4")
+if (!require("glmnet")) install.packages("glmnet")
+
+
+require("caret")
+require("visreg")
+require("MASS")
+require("lme4")
+require("glmnet")
+```
+
+```{r, tidy=TRUE}
+## Loading the dataset
+# require("CASdatasets")
+# data("freMTPLfreq")
+# 
+# freMTPLfreq = subset(freMTPLfreq, Exposure<=1 & Exposure >= 0 & CarAge<=25)
+# 
+# set.seed(85)
+# folds = createDataPartition(freMTPLfreq$ClaimNb, 0.5)
+# dataset = freMTPLfreq[folds[[1]], ]
+
+load("dataset.RData")
+```
+
+# GLM
+
+We are going to model the claim frequencies using a GLM. We will only consider the categorical variables in this part, as we will see later that other tools are available to treat the continuous variables without having to discretize them.
+
+Let us first split out dataset in two parts: a training set and a testing set.
+```{r, tidy=TRUE}
+set.seed(21)
+in_training = createDataPartition(dataset$ClaimNb, times = 1, p = 0.8, list=FALSE)
+training_set = dataset[in_training,]
+testing_set  = dataset[-in_training,]
+```
+
+## Intercept
+
+The main function is called *glm*. Let us run the function on our dataset.
+```{r, tidy=TRUE}
+m0 = glm(ClaimNb ~ offset(log(Exposure)), 
+         data = training_set,
+         family=poisson())
+summary(m0)
+```
+By default, the link function is the log (see help file *?poisson*). 
+
+We can find the average claim frequency of the portfolio. The average claim frequency is then given by $exp(\beta_0)$ = $exp(`r round(m0$coefficients, 4)`)$ = `r round(exp(m0$coefficients), 4)`.
+```{r, eval=FALSE, tidy=TRUE}
+exp(m0$coefficients)
+```
+
+
+## All the variables
+
+In this whole session, we will only consider the discrete variables, namely *Power*, *Brand*, *Gas* and *Region*.
+
+Let us include all these variables (without interactions) in the model.
+```{r, tidy=TRUE}
+m1 = glm(ClaimNb ~ offset(log(Exposure)) + Power  + Gas + Brand + Region,
+         data = training_set,
+         family=poisson(link = log))
+summary(m1)
+```
+
+Using the function *visreg* from the package of the same name, we can easily see plots related to the effect of the variables.
+```{r, tidy=TRUE, fig.align='center', dpi=500}
+visreg(m1, type="contrast", scale="response")
+```
+
+
+We see some levels of some variables appear to be not significantly different from 0. Moreover, it could be that some levels appear to be significantly different from 0, but are not significantly different from each other and could be merged.
+
+If we wish to perform a likelihood ratio test between the full model ($m_1$) and the model without any explanatory variables ($m_0$)
+```{r, tidy=TRUE}
+anova(m0, m1, test="Chisq")
+```
+
+We can try to merge some of the levels that appear to be not significantly different. 
+
+## Variable : Brand
+
+Let's start with the variable Brand.
+
+```{r, tidy=TRUE}
+training_set$Brand_merged = training_set$Brand
+testing_set$Brand_merged = testing_set$Brand
+
+levels(training_set$Brand_merged) <- list("A" = c("Fiat","Mercedes, Chrysler or BMW",
+                                                  "Opel, General Motors or Ford",
+                                                  "other",
+                                                  "Volkswagen, Audi, Skoda or Seat"),
+                                          "B" = "Japanese (except Nissan) or Korean",
+                                          "C" = "Renault, Nissan or Citroen")
+
+levels(testing_set$Brand_merged) <- list("A" = c("Fiat","Mercedes, Chrysler or BMW",
+                                                  "Opel, General Motors or Ford",
+                                                  "other",
+                                                  "Volkswagen, Audi, Skoda or Seat"),
+                                          "B" = "Japanese (except Nissan) or Korean",
+                                          "C" = "Renault, Nissan or Citroen")
+
+table(training_set$Brand_merged, useNA = "always")
+
+```
+
+Let us now estimate the new model with these merged levels...
+
+```{r, tidy=TRUE}
+m2 = glm(ClaimNb ~ offset(log(Exposure)) + Power  + Gas + Brand_merged + Region,
+         data = training_set,
+         family=poisson(link = log))
+summary(m2)
+```
+
+...and perform a likelihood ratio test to compare both models.
+
+```{r, tidy=TRUE}
+anova(m2, m1, test="Chisq")
+```
+
+## Variable : Power
+
+Let us now look at the variable Power.
+```{r, tidy=TRUE, dpi=500, fig.align='center'}
+visreg(m2, xvar="Power", type="contrast", scale="response")
+```
+
+```{r, tidy=TRUE}
+training_set$Power_merged = training_set$Power
+levels(training_set$Power_merged) = list("A"= "d",
+                                         "B" = c("e","f", "g", "h"),
+                                         "C" = c("i","j", "k", "l", "m", "n", "o"))
+testing_set$Power_merged = testing_set$Power
+levels(testing_set$Power_merged) = list("A"= "d",
+                                         "B" = c("e","f", "g", "h"),
+                                         "C" = c("i", "j",  "k", "l", "m", "n", "o"))
+m3 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged  + Gas + Brand_merged + Region,
+         data = training_set,
+         family=poisson(link = log))
+summary(m3)
+anova(m3, m2, test="Chisq")
+```
+
+## Variable : Region
+
+Finally, let's consider the variable Region.
+```{r,tidy=TRUE, dpi=500, fig.align='center'}
+visreg(m3, xvar="Region", type="contrast", scale="response")
+```
+
+
+```{r, tidy=TRUE}
+training_set$Region_merged = training_set$Region
+levels(training_set$Region_merged)[c(1,5, 10)] ="R11-31-74"
+
+testing_set$Region_merged = testing_set$Region
+levels(testing_set$Region_merged)[c(1,5, 10)] ="R11-31-74"
+
+
+m4 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged  + Gas + Brand_merged + Region_merged,
+         data = training_set,
+         family=poisson(link = log))
+summary(m4)
+anova(m4, m3, test="Chisq")
+```
+
+## Interactions ?
+
+Let's see if we can add some interactions.
+```{r, tidy=TRUE}
+m5.1 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Gas + Brand_merged + Region_merged,
+         data = training_set,
+         family=poisson(link = log))
+summary(m5.1)
+anova(m4, m5.1, test="Chisq")
+```
+
+Let's try to find other interactions 
+
+- with Power_merged.
+```{r, tidy=TRUE}
+m5.2 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged  + Gas +  Power_merged *Brand_merged + Gas+Region_merged,
+         data = training_set,
+         family=poisson(link = log))
+anova(m4, m5.2, test="Chisq")
+
+m5.3 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged  + Gas +  Brand_merged + Gas + Power_merged *Region_merged,
+         data = training_set,
+         family=poisson(link = log))
+anova(m4, m5.3, test="Chisq")
+```
+We will now keep the interaction between Power_merged and Region_merged, and try other possibilities.
+
+
+- with Gas
+
+```{r, tidy=TRUE}
+m5.4 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged   +Brand_merged* Gas +Power_merged*Region_merged,
+         data = training_set,
+         family=poisson(link = log))
+anova(m5.3, m5.4, test="Chisq")
+
+m5.5 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged*Region_merged + Gas +Brand_merged + Gas+Region_merged* Gas,
+         data = training_set,
+         family=poisson(link = log))
+anova(m5.3, m5.5, test="Chisq")
+```
+- with Brand_merged
+
+```{r, tidy=TRUE}
+m5.6 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged,
+         data = training_set,
+         family=poisson(link = log))
+anova(m5.3, m5.6, test="Chisq")
+```
+This is in the 'gray zone'. We will keep the interaction.
+
+
+We can visualize the interaction between Power_merged and Region_merged
+
+```{r, tidy=TRUE, fig.align='center', dpi=500}
+visreg(m5.6, xvar="Power_merged", by="Region_merged", scale="response", type="contrast")
+```
+
+and between Region_merged and Brand_merged
+
+```{r, tidy=TRUE, fig.align='center', dpi=500}
+visreg(m5.6, xvar="Brand_merged", by="Region_merged", scale="response", type="contrast")
+```
+
+## Predictive Power of the models
+
+Let us now check the predictive power of the various models that we have used up to now. We can use the testing_set that we have created from the beginning. We can use for instance, the Poisson deviance as a measure (that we wish to minimize).
+```{r, tidy=TRUE}
+results = rep(NA, 7)
+
+results[1] = 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m0, newdata=testing_set,  type="response"),log=TRUE)))
+
+results[2] = 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m1, newdata=testing_set,  type="response"),log=TRUE)))
+
+results[3] = 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m2, newdata=testing_set,  type="response"),log=TRUE)))
+
+results[4] = 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m3, newdata=testing_set,  type="response"),log=TRUE)))
+
+results[5] = 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m4, newdata=testing_set,  type="response"),log=TRUE)))
+
+results[6] = 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m5.3, newdata=testing_set,  type="response"),log=TRUE)))
+
+results[7] = 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m5.6, newdata=testing_set,  type="response"),log=TRUE)))
+
+results
+```
+
+# GLMM
+
+We will directly consider the last models from the previous section (GLM), and now consider either a Negative Binomial distribution, or a Poisson-LogNormal distribution. Let us start with the Negative Binomial.
+
+## Negative Binomial
+
+The function **glm.nb** from package **MASS** allows to perform the Poisson-Gamma distribution.
+```{r, tidy=TRUE}
+m.nb.5.6 = glm.nb(ClaimNb ~ offset(log(Exposure)) +
+                    Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged,
+         data = training_set)
+summary(m.nb.5.6)
+```
+
+First, let us show that the estimates are close to those found by the Poisson regression.
+```{r, tidy=TRUE}
+cbind(m.nb.5.6$coefficients, m5.6$coefficients)
+```
+
+
+We can however see that the standard errors are larger with the Negative Binomial model than with the Poisson.
+
+```{r, tidy=TRUE}
+cbind(sqrt(diag(vcov(m.nb.5.6))), sqrt(diag(vcov(m5.6))))
+```
+
+```{r, tidy=TRUE}
+AIC(m.nb.5.6, m5.6)
+BIC(m.nb.5.6, m5.6)
+```
+
+
+## Poisson-LogNormal
+
+We can rely on the function *glmer* from the package *lme4*.
+However, the execution is very slow and time-consuming.
+
+# Elastic Net
+
+## LASSO
+
+Let us now conclude by using the LASSO. We can use the package *glmnet*.
+```{r, cache=TRUE, tidy=TRUE}
+ptn=Sys.time()
+x = model.matrix(ClaimNb ~ 0 + Power  * Region + Power*Brand + Power*Gas +  Region* Brand + Region* Gas + Brand*Gas,
+                 data=training_set)
+set.seed(542)
+folds = createFolds(training_set$ClaimNb, 5, list=FALSE)
+
+set.seed(58)
+m.lasso.0.cv = cv.glmnet(x, y = training_set$ClaimNb, offset = log(training_set$Exposure),
+       family = "poisson",
+       alpha = 1, #LASSO = 1, Ridge = 0,
+       nfolds = 5,
+       foldid = folds,
+       maxit=10^4,
+       nlambda = 25)
+
+
+ptn_1 = Sys.time() - ptn
+ptn_1
+plot(m.lasso.0.cv)
+
+```
+
+Let us see which variables have a non-zero $\beta$.
+
+```{r, tidy=TRUE}
+coef(m.lasso.0.cv, s = "lambda.min")
+```
+
+## Ridge
+
+Now Ridge,
+```{r, cache=TRUE, tidy=TRUE, fig.align='center', dpi=500}
+ptn=Sys.time()
+set.seed(58)
+m.ridge.0.cv = cv.glmnet(x, y = training_set$ClaimNb, offset = log(training_set$Exposure),
+       family = "poisson",
+       alpha = 0, #LASSO = 1, Ridge = 0,
+       nfolds = 5,
+       foldid = folds,
+       maxit = 10^3,
+       nlambda = 25)
+
+ptn_1 = Sys.time() - ptn
+ptn_1
+plot(m.ridge.0.cv)
+```
+
+
+## Elastic Net
+
+Finally, elastic net with $\alpha = 0.5$.
+```{r, cache=TRUE, tidy=TRUE, fig.align='center', dpi=500}
+ptn=Sys.time()
+set.seed(58)
+m.elasticnet.0.cv = cv.glmnet(x, y = training_set$ClaimNb, offset = log(training_set$Exposure),
+       family = "poisson",
+       alpha = 0.5, #LASSO = 1, Ridge = 0,
+       nfolds = 5,
+       foldid = folds,
+       maxit = 10^3,
+       nlambda = 25)
+
+ptn_1 = Sys.time() - ptn
+ptn_1
+plot(m.elasticnet.0.cv)
+
+```
+
+
+## Comparison with GLM
+
+Finally, let us assess the predictive power of the model using our testing_set.
+
+```{r, tidy=TRUE, fig.align='center', dpi=500}
+x_test = model.matrix(ClaimNb ~ 0 + Power  * Region + Power*Brand + Power*Gas +  Region* Brand + Region* Gas + Brand*Gas,
+                 data=testing_set)
+
+
+2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m.lasso.0.cv,newx = x_test,newoffset= log(testing_set$Exposure),s = m.lasso.0.cv$lambda.min, type="response"),
+            log=TRUE)))
+
+2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m.ridge.0.cv,newx = x_test,newoffset= log(testing_set$Exposure),s = m.ridge.0.cv$lambda.min, type="response"),
+            log=TRUE)))
+
+2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m.elasticnet.0.cv,newx = x_test,newoffset= log(testing_set$Exposure),s = m.elasticnet.0.cv$lambda.min, type="response"),
+            log=TRUE)))
+
+
+```
+
+
+
+
