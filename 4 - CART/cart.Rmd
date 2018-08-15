@@ -1,0 +1,201 @@
+---
+title: "Tree-based models"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true    
+    theme: united
+    highlight: tango
+    code_folding: show
+    keep_md: false
+  github_document:
+        toc: true
+---
+
+# Loading the data and the packages
+First, the packages
+```{r, results='hide', message=FALSE, warning=FALSE}
+require("CASdatasets")
+require("rpart")
+require("rpart.plot")
+require("caret")
+```
+then, the data
+```{r, tidy=TRUE}
+# data("freMTPLfreq")
+# freMTPLfreq = subset(freMTPLfreq, Exposure<=1 & Exposure >= 0 & CarAge<=25)
+# 
+# set.seed(85)
+# folds = createDataPartition(freMTPLfreq$ClaimNb, 0.5)
+# dataset = freMTPLfreq[folds[[1]], ]
+load("dataset.RData")
+```
+
+Let us first split out dataset in two parts: a training set and a testing set.
+```{r, tidy=TRUE}
+set.seed(21)
+in_training = createDataPartition(dataset$ClaimNb, times = 1, p = 0.8, list=FALSE)
+training_set = dataset[in_training,]
+testing_set  = dataset[-in_training,]
+```
+
+# CART
+The package *rpart* allows to compute regression trees. *rpart* can be used for regression and classification. It also implements a method for **poisson** data.
+
+## Example
+
+Let us start with a simple example:
+```{r, tidy=TRUE}
+m0_rpart = rpart(cbind(Exposure, ClaimNb)~ DriverAge + CarAge,
+                 data=training_set,
+                 method="poisson")
+summary(m0_rpart)
+```
+
+It appears that the tree has a single node and has not been split further. This comes from the complexity parameter which penalizes the splitting. By default, the complexity parameter $cp$ is set to $0.01$, which is often too large for Poisson data with low frequencies.
+
+Let us put $cp = 0$, but to keep a small tree we will also impose a maximum depth of $3$.
+```{r, tidy=TRUE}
+m0_rpart = rpart(cbind(Exposure, ClaimNb)~ DriverAge + CarAge,
+                 data=training_set,
+                 method="poisson",
+                 control = rpart.control(cp = 0, maxdepth = 3))
+summary(m0_rpart)
+```
+
+The easiest way to interpret a CART is probably to plot it (if it is not too large, though!). This can be achieved with the function *rpart.plot* from the package *rpart.plot*.
+
+```{r, fig.align="center", dpi=500, tidy=TRUE}
+rpart.plot(m0_rpart)
+```
+
+If the tree is too large, we will probably have some overfitting. To prevent overfitting, we can play with the complexity parameter *cp*. A good approach is to compute the whole tree, without any penalty (i.e. complexity parameter is set to 0) and afterwards *prune* to tree.
+```{r, tidy=TRUE, fig.align='center', tidy=TRUE}
+m0_rpart = rpart(cbind(Exposure, ClaimNb)~ DriverAge + CarAge,
+                 data=training_set,
+                 method="poisson",
+                 control = rpart.control(cp = 0))
+rpart.plot(m0_rpart)
+```
+
+The trees becomes too large. We can prune the tree using the function *prune*. For instance, if we set $cp = 0.0009$,
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+rpart.plot(prune(m0_rpart, cp=0.0009))
+```
+
+
+We also see that in some terminal nodes (i.e. leaves), the number of observations (and of claims) is very low. We can set a minimum number of observation in any terminal node using *minbucket*
+
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+m0_rpart = rpart(cbind(Exposure, ClaimNb)~ DriverAge + CarAge,
+                 data=training_set,
+                 method="poisson",
+                 control = rpart.control(cp = 0, maxdepth = 3, minbucket = 1000))
+rpart.plot(m0_rpart)
+```
+
+## Cross-Validation
+
+Let us now find the *optimal* tree, by using cross-validation. We will again only use the variable *DriverAge* and *CarAge* in this section. By default, rpart will perform 10-fold cross-validation, using the option xval = 10.
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+m0_rpart = rpart(cbind(Exposure, ClaimNb)~ DriverAge + CarAge,
+                 data=training_set,
+                 method="poisson",
+                 control = rpart.control(cp = 0, xval = 10))
+printcp(m0_rpart)
+```
+
+We extract the optimal complexity parameter.
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+plot(m0_rpart$cptable[,c(1,4)], xlim=c(0,0.001))
+cp_star = m0_rpart$cptable[which.min(m0_rpart$cptable[,4]),1]
+```
+
+Let us see the optimal tree.
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+rpart.plot(prune(m0_rpart,cp=cp_star))
+```
+
+## All covariates
+
+Let us now include all the covariates.
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+m1_rpart = rpart(cbind(Exposure, ClaimNb)~ Power+ CarAge+DriverAge+Brand+Gas+Region+Density,
+                 data=training_set,
+                 method="poisson",
+                 control = rpart.control(cp = 0, xval = 10, minbucket = 1000))
+printcp(m1_rpart)
+```
+We can plot the errors
+```{r, fig.align='center', dpi=500, tidy=TRUE, message=FALSE}
+require(ggplot2)
+plotcp(x = m1_rpart,minline = TRUE, col="red")
+ggplot() + geom_line(aes(x = m1_rpart$cptable[,1], y=m1_rpart$cptable[,4]))
+```
+
+
+
+If we take the value of cp that minimizes the error, we find 
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+cp_star = m1_rpart$cptable[which.min(m1_rpart$cptable[,4]),1]
+cp_star
+```
+
+
+Let us plot the optimal tree
+```{r, fig.align='center', dpi=500, tidy=TRUE, warning=FALSE, message=FALSE}
+m2_rpart = prune(m1_rpart, cp=cp_star)
+rpart.plot(m2_rpart)
+```
+
+Finally, let us compute the deviance on the testing_set.
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m2_rpart,testing_set)*testing_set$Exposure,
+            log=TRUE)))
+```
+If we compute the deviance on the full tree (not the pruned tree), we obtain
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m1_rpart,testing_set)*testing_set$Exposure,
+            log=TRUE)))
+```
+
+
+
+# Bagging of trees
+
+Let us create the bootstrap samples.
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+set.seed(85)
+bootstrap_samples = createResample(training_set$ClaimNb, times=50)
+```
+For each sample, we estimate a CART with the optimal complexity parameter found previously.
+Each tree, gives us an estimation of the claim frequency, which we average.
+
+
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+bagg_cart = lapply(bootstrap_samples, function(X){
+  rpart(cbind(Exposure, ClaimNb)~ Power+ CarAge+DriverAge+Brand+Gas+Region+Density,
+                 data=training_set[X,],
+                 method="poisson",
+                 control = rpart.control(cp = cp_star, xval = 0))
+})
+```
+
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+pred = lapply(bagg_cart, function(X){
+                    predict(X,testing_set)*testing_set$Exposure})
+
+pred = do.call(cbind, pred)
+pred = apply(pred, 1, mean)
+```
+
+
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = pred,
+            log=TRUE)))
+```
+
