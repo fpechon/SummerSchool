@@ -1,0 +1,258 @@
+---
+title: "Random Forest"
+output:
+  github_document:
+        toc: true
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true    
+    theme: united
+    highlight: tango
+    code_folding: show
+    keep_md: false
+---
+
+# Loading the data and the packages
+First, the packages
+```{r, tidy=TRUE, results='hide', message=FALSE, warning=FALSE}
+require("CASdatasets")
+require("rfCountData")
+require("caret")
+```
+then, the data
+```{r, tidy=TRUE}
+# data("freMTPLfreq")
+# freMTPLfreq = subset(freMTPLfreq, Exposure<=1 & Exposure >= 0 & CarAge<=25)
+# 
+# set.seed(85)
+# folds = createDataPartition(freMTPLfreq$ClaimNb, 0.5)
+# dataset = freMTPLfreq[folds[[1]], ]
+load("dataset.RData")
+```
+
+Let us first split out dataset in two parts: a training set and a testing set.
+```{r, tidy=TRUE}
+set.seed(21)
+in_training = createDataPartition(dataset$ClaimNb, times = 1, p = 0.8, list=FALSE)
+training_set = dataset[in_training,]
+testing_set  = dataset[-in_training,]
+```
+
+The package *randomForest* allows to perform regression and classification. However, the split criterion in the regression case is based on the MSE, which may not be relevant for count data. Moreover, it did not allow the inclusion of an offset to take into account the different exposures of the policyholders.
+
+The package *rfCountData* tries to correct these issues. It is to be used only on count data.
+```{r, tidy=TRUE}
+require(rfCountData)
+```
+
+The use of the package is similar to the randomForest. Here, the main function is called *rfPoisson*.
+
+```{r, tidy=TRUE, fig.align='center', dpi=500, cache=TRUE}
+set.seed(5)
+m0_rf = rfPoisson(x = training_set[,c("DriverAge", "CarAge")],
+                  offset = log(training_set$Exposure),
+                  y = training_set$ClaimNb,
+                  ntree = 50,
+                  nodesize = 4000,
+                  mtry=2,
+                  importance=TRUE)
+importance(m0_rf)
+```
+
+If we want some idea of the marginal effect of the variables, we can use the partial dependence plots
+
+```{r, tidy=TRUE, fig.align='center', dpi=500, cache=TRUE}
+par(mfrow=c(1,2))
+partialPlot(m0_rf, training_set, offset = log(training_set$Exposure), x.var="DriverAge")
+partialPlot(m0_rf, training_set, offset = log(training_set$Exposure), x.var="CarAge")
+```
+
+We can see the deviance (on the training_set) as a function of the number of trees
+
+```{r, tidy=TRUE, fig.align='center', dpi=500}
+plot(m0_rf)
+```
+
+With only very few trees, we clearly have overfitting. After a few iterations, the error will stabilize.
+
+Let's use all the variables and decrease the nodesize to 2500.
+
+```{r, tidy=TRUE, fig.align='center', dpi=500, cache=TRUE}
+set.seed(5)
+m1_rf = rfPoisson(x = training_set[,4:10],
+                  offset = log(training_set$Exposure),
+                  y = training_set$ClaimNb,
+                  ntree = 100,
+                  nodesize = 2500,
+                  mtry=3,
+                  importance=TRUE,
+                  do.trace=TRUE)
+```
+
+We can again see the error as a function of the number of trees
+```{r, tidy=TRUE, fig.align='center', dpi=500}
+plot(m1_rf, ylim=c(0.16,0.17))
+```
+
+We can also plot the variable importance.
+
+```{r, tidy=TRUE, fig.align='center', dpi=500}
+importance(m1_rf)
+```
+
+and the partial dependences, for instance, for the Age of the Driver.
+
+```{r, tidy=TRUE, fig.align='center', dpi=500, cache=TRUE}
+partialPlot(x=m1_rf, pred.data=training_set[,4:10], offset=log(training_set$Exposure), x.var="DriverAge")
+```
+
+
+```{r, tidy=TRUE}
+2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m1_rf, testing_set[,4:10], log(testing_set$Exposure)),
+            log=TRUE)))
+```
+
+
+We could rely on cross-validation to find the optimal mtry parameter. We are only going to compare two different mtry parameter (due to the time limitation).
+
+For mtry = 3,
+```{r, tidy=TRUE, cache=TRUE}
+set.seed(6)
+folds = createFolds(training_set$ClaimNb, k = 5)
+require(parallel)
+cl = makeCluster(5)
+clusterExport(cl, "training_set")
+set.seed(859)
+res0 = parLapply(cl, folds, function(X) {
+  require(rfCountData)
+    m_cv = rfPoisson(x = training_set[-X,4:10],
+              offset = log(training_set[-X,]$Exposure),
+              y = training_set[-X,]$ClaimNb,
+              xtest = training_set[X,4:10],
+              offsettest = log(training_set[X,]$Exposure),
+              ytest = training_set[X,]$ClaimNb,
+              ntree = 100,
+              nodesize = 10000,
+              mtry=3,
+              importance=TRUE,
+              do.trace=FALSE,
+              keep.forest=FALSE)
+    pred = m_cv$test$predicted
+   2*(sum(dpois(x = training_set[X, ]$ClaimNb, lambda = training_set[X, ]$ClaimNb,log=TRUE))-
+  sum(dpois(x = training_set[X, ]$ClaimNb, lambda = pred, log=TRUE))) / nrow(training_set[X,])
+})
+stopCluster(cl)
+```
+For mtry = 5,
+```{r, tidy=TRUE, cache=TRUE}
+set.seed(6)
+folds = createFolds(training_set$ClaimNb, k = 5)
+require(parallel)
+cl = makeCluster(5)
+clusterExport(cl, "training_set")
+set.seed(256)
+res1 = parLapply(cl, folds, function(X) {
+  require(rfCountData)
+    m_cv = rfPoisson(x = training_set[-X,4:10],
+              offset = log(training_set[-X,]$Exposure),
+              y = training_set[-X,]$ClaimNb,
+              xtest = training_set[X,4:10],
+              offsettest = log(training_set[X,]$Exposure),
+              ytest = training_set[X,]$ClaimNb,
+              ntree = 100,
+              nodesize = 10000,
+              mtry=5,
+              importance=TRUE,
+              do.trace=FALSE,
+              keep.forest=FALSE)
+    pred = m_cv$test$predicted
+    2*(sum(dpois(x = training_set[X, ]$ClaimNb, lambda = training_set[X, ]$ClaimNb,log=TRUE))-
+  sum(dpois(x = training_set[X, ]$ClaimNb, lambda = pred, log=TRUE))) / nrow(training_set[X,])
+})
+stopCluster(cl)
+```
+
+We obtain the following results:
+
+```{r, fig.align='center', dpi=500, tidy=TRUE}
+boxplot(cbind(unlist(res0), unlist(res1)), names=c(3,5), main="mtry parameter 5-fold CV", ylab="Poisson Mean Deviance")
+apply(cbind(unlist(res0), unlist(res1)), 2,mean)
+```
+
+
+Let us now construct the whole forest on the whole training_set with the optimal mtry = 3.
+```{r, tidy=TRUE, fig.align='center', dpi=500, cache=TRUE}
+set.seed(43)
+m_final_1 = rfPoisson(x = training_set[,4:10],
+              offset = log(training_set$Exposure),
+              y = training_set$ClaimNb,
+              xtest = testing_set[,4:10],
+              offsettest = log(testing_set$Exposure),
+              ytest = testing_set$ClaimNb,
+              ntree = 100,
+              nodesize = 10000,
+              mtry=3,
+              importance=TRUE,
+              do.trace=TRUE,
+              keep.forest=TRUE)
+plot(m_final_1, ylim=c(0.160,0.17))
+```
+
+We can compare with a higher nodesize..
+
+```{r, tidy=TRUE, fig.align='center', dpi=500, cache=TRUE}
+set.seed(43)
+m_final_2 = rfPoisson(x = training_set[,4:10],
+              offset = log(training_set$Exposure),
+              y = training_set$ClaimNb,
+              xtest = testing_set[,4:10],
+              offsettest = log(testing_set$Exposure),
+              ytest = testing_set$ClaimNb,
+              ntree = 100,
+              nodesize = 15000,
+              mtry=3,
+              importance=TRUE,
+              do.trace=TRUE,
+              keep.forest=TRUE)
+plot(m_final_2, ylim=c(0.160,0.17))
+```
+
+... and with a lower nodesize.
+
+```{r, tidy=TRUE, fig.align='center', dpi=500, cache=TRUE}
+set.seed(43)
+m_final_3 = rfPoisson(x = training_set[,4:10],
+              offset = log(training_set$Exposure),
+              y = training_set$ClaimNb,
+              xtest = testing_set[,4:10],
+              offsettest = log(testing_set$Exposure),
+              ytest = testing_set$ClaimNb,
+              ntree = 100,
+              nodesize = 5000,
+              mtry=3,
+              importance=TRUE,
+              do.trace=TRUE,
+              keep.forest=TRUE)
+plot(m_final_3, ylim=c(0.160,0.17))
+```
+
+We conclude with the usual mean deviance on the testing_set
+```{r}
+pred = predict(m_final_1, testing_set[,4:10], offset = log(testing_set$Exposure))
+2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = pred,
+            log=TRUE)))
+
+pred = predict(m_final_2, testing_set[,4:10], offset = log(testing_set$Exposure))
+2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = pred,
+            log=TRUE)))
+
+pred = predict(m_final_3, testing_set[,4:10], offset = log(testing_set$Exposure))
+2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = pred,
+            log=TRUE)))
+```
+
