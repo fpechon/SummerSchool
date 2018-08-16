@@ -45,6 +45,12 @@ testing_set  = dataset[-in_training,]
 
 The *gbm3* package is very similar to the package *gbm* available on CRAN. However, the gbm package is now an orphan, while the gbm3 package is basically an enhanced version of the *gbm* package and is maintained.
 
+We have several distributions available in the *gbm3* packages:
+```{r, tidy=TRUE}
+available_distributions()
+```
+
+
 ## Small Example with two variables.
 
 The main function is *gbmt*.
@@ -78,6 +84,7 @@ No need to rerun everything, we can just add some new trees.
 set.seed(2)
 m1 = gbm_more(m0, num_new_trees = 400, is_verbose = TRUE)
 ```
+
 
 We can check the optimal number of trees based on the out-of-bag observations.
 
@@ -223,8 +230,20 @@ for (i in 1:6){
     res[i,j] = interact(gbm_fit_obj = m0_gbm, data=training_set, var_indices = c(i,j), best_iter)
   }
 }
-res
+diag(res) = 0
+row.names(res) = c("CarAge", "DriverAge", "Power", "Brand","Gas", "Region", "Density" )
+colnames(res) = row.names(res)
+library(reshape2)
+interact_melt<-melt(res,na.rm = TRUE)
+library(ggplot2)
+ggplot(data = interact_melt, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile(color = "white")+
+  scale_fill_gradient2(low = "white", mid = "gray", high = "blue",name="Friedman's\nH-statistic") + 
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+                                   size = 12, hjust = 1))+
+  coord_fixed()
 ```
+
 
 Let us plot the partial dependencies of some of these variables.
 
