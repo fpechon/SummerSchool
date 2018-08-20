@@ -40,4 +40,4 @@ if(length(output$pred) == nrow(testing_set)){
 
 save(output, file="PG_YOURNAME.RData") #Send me this file.
 
-sqrt(sum((testing_set$AvClaimAmount - output$pred)^2)) ## Will be 0 since the AvClaimCost not given in testing_set.
+sqrt(mean((testing_set$AvClaimAmount - output$pred)^2)) ## Will be 0 since the AvClaimCost not given in testing_set.
