@@ -63,7 +63,7 @@ set.seed(85)
 require("caret")
 folds = createDataPartition(freMTPLfreq$ClaimNb, 0.5)
 dataset = freMTPLfreq[folds[[1]], ]
-save(dataset, file="dataset.RData")
+save(dataset, file="../dataset.RData")
 ```
 
 A good idea is to check whether the dataset has been loaded correctly. To do this, the following tools can be used:
@@ -275,7 +275,7 @@ Power.summary
 ```
 
 <!-- html table generated in R 3.5.1 by xtable 1.8-2 package -->
-<!-- Mon Aug 13 16:48:56 2018 -->
+<!-- Mon Aug 20 15:36:25 2018 -->
 <table border="1">
 <tr>
 <th>
@@ -527,7 +527,7 @@ CarAge.summary
 ```
 
 <!-- html table generated in R 3.5.1 by xtable 1.8-2 package -->
-<!-- Mon Aug 13 16:48:57 2018 -->
+<!-- Mon Aug 20 15:36:26 2018 -->
 <table border="1">
 <tr>
 <th>
@@ -851,7 +851,7 @@ CarAge.summary
 ```
 
 <!-- html table generated in R 3.5.1 by xtable 1.8-2 package -->
-<!-- Mon Aug 13 16:48:59 2018 -->
+<!-- Mon Aug 20 15:36:28 2018 -->
 <table border="1">
 <tr>
 <th>
@@ -1333,7 +1333,7 @@ head(DriverAge.summary, 9)
 ```
 
 <!-- html table generated in R 3.5.1 by xtable 1.8-2 package -->
-<!-- Mon Aug 13 16:49:00 2018 -->
+<!-- Mon Aug 20 15:36:29 2018 -->
 <table border="1">
 <tr>
 <th>
@@ -1545,7 +1545,7 @@ Brand.summary
 ```
 
 <!-- html table generated in R 3.5.1 by xtable 1.8-2 package -->
-<!-- Mon Aug 13 16:49:02 2018 -->
+<!-- Mon Aug 20 15:36:31 2018 -->
 <table border="1">
 <tr>
 <th>
@@ -1748,7 +1748,7 @@ Region.summary
 ```
 
 <!-- html table generated in R 3.5.1 by xtable 1.8-2 package -->
-<!-- Mon Aug 13 16:49:06 2018 -->
+<!-- Mon Aug 20 15:36:35 2018 -->
 <table border="1">
 <tr>
 <th>
@@ -1972,7 +1972,7 @@ area.points = area.points[order(area.points$order),] #Has to be ordered correctl
 
 ggplot(area.points, aes(long, lat, group=group)) + ggtitle("Observed Claim Frequencies")+
   geom_polygon(aes(fill = area.points$Obs.Claim.Freq))+
-  scale_fill_gradient(low = "yellow", high = "red", name="Obs. Claim Freq.", limits= c(0.061,0.085))+
+  scale_fill_gradient(low = "green", high = "red", name="Obs. Claim Freq.", limits= c(0.061,0.085))+
 xlab("Longitude") + ylab("Latitude")
 ```
 
@@ -2021,7 +2021,7 @@ head(Density.summary)
 ```
 
 <!-- html table generated in R 3.5.1 by xtable 1.8-2 package -->
-<!-- Mon Aug 13 16:49:20 2018 -->
+<!-- Mon Aug 20 15:36:48 2018 -->
 <table border="1">
 <tr>
 <th>
@@ -2183,7 +2183,7 @@ Density.summary
 ```
 
 <!-- html table generated in R 3.5.1 by xtable 1.8-2 package -->
-<!-- Mon Aug 13 16:49:21 2018 -->
+<!-- Mon Aug 20 15:36:49 2018 -->
 <table border="1">
 <tr>
 <th>
