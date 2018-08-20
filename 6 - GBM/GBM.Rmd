@@ -33,7 +33,7 @@ We can also load the data (same as in the previous sessions).
 # set.seed(85)
 # folds = createDataPartition(freMTPLfreq$ClaimNb, 0.5)
 # dataset = freMTPLfreq[folds[[1]], ]
-load("dataset.RData")
+load("../dataset.RData")
 
 set.seed(21)
 in_training = createDataPartition(dataset$ClaimNb, times = 1, p = 0.8, list=FALSE)
@@ -362,6 +362,3 @@ c(sum(pred$V1 * pred$company), sum(pred$company * training_set$ClaimNb))
 # Total expected claims for company B and total observed claims
 c(sum(pred$V2 * (1-pred$company)), sum((1-pred$company) * training_set$ClaimNb)) 
 ```
-
-
-
