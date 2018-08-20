@@ -1,7 +1,7 @@
 Results Pricing Game
 ================
 
-Please find below the results of the Pricing Game. The blue line corresponds to the null model (average claim cost of the portfolio as predictor).
+Please find below the results of the Pricing Game. The blue line corresponds to the null model (average claim cost of the training set as predictor on the testing set.).
 
 ``` r
 library(ggplot2)
@@ -11,4 +11,4 @@ ggplot(leaderboard) + geom_point(aes(x=Letter, y=RMSE, color=Letter)) + xlab("Id
 
 <img src="results_files/figure-markdown_github/unnamed-chunk-3-1.png" style="display: block; margin: auto;" />
 
-The best model reached as low as 565.21408 on the testing set.
+The best model reached an RMSE as low as 565.21408 on the testing set.
