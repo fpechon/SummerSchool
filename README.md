@@ -1,16 +1,14 @@
 Summer School Lausanne 2018
 ================
 
-All the scripts of the UseR sessions will be available here.
-
-More details on the Pricing Game will follow.
+All the scripts of the UseR sessions are available here.
 
 Required Software
 -----------------
 
 -   R (at least 3.4.3 <https://cloud.r-project.org/bin/windows/base/> )
 -   RStudio ( <https://www.rstudio.com/products/rstudio/download/#download> )
--   For Windows, Rtools : <https://cran.r-project.org/bin/windows/Rtools/Rtools35.exe>
+-   For Windows, Rtools : <https://cran.r-project.org/bin/windows/Rtools/> (Make sure to check the box *add to path* when installing Rtools)
 -   For Mac: Install gfortran-6.1.pkg (more info <https://cran.r-project.org/bin/macosx/tools/> )
 
 Please run the following script in your R session to install all the required packages. Make sure Rtools (Windows) or gfortan (Mac) has been installed previously.
@@ -65,7 +63,7 @@ if (!require("devtools")) install.packages("devtools")
 if (!require("rpart")) install.packages("rpart")
 if (!require("rpart.plot")) install.packages("rpart.plot")
 if (!require("randomForest")) install.packages("randomForest")
-if (!require("xgboost")) install.packages("xgboost")
+if (!require("reshape2")) install.packages("reshape2")
 
 require("Rcpp")
 require("mgcv")
@@ -81,7 +79,7 @@ require("parallel")
 require("devtools")
 require("rpart")
 require("rpart.plot")
-require("xgboost")
+require("reshape2")
 
 install_github("gbm-developers/gbm3")
 install_github("fpechon/rfCountData")
