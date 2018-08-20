@@ -23,7 +23,7 @@ then, the data
 # set.seed(85)
 # folds = createDataPartition(freMTPLfreq$ClaimNb, 0.5)
 # dataset = freMTPLfreq[folds[[1]], ]
-load("dataset.RData")
+load("../dataset.RData")
 ```
 
 Let us first split out dataset in two parts: a training set and a testing set.
