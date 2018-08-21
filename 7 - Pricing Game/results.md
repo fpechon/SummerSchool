@@ -23,48 +23,9 @@ Iegor Rudnytskyi kindly send us his winning solution.
 ``` r
 library(ranger)
 library(caret)
-```
-
-    ## Loading required package: lattice
-
-``` r
 library(tidyverse)
-```
-
-    ## -- Attaching packages -------------------------------------------------------------------------- tidyverse 1.2.1 --
-
-    ## v tibble  1.4.2     v purrr   0.2.5
-    ## v tidyr   0.8.1     v dplyr   0.7.6
-    ## v readr   1.1.1     v stringr 1.3.1
-    ## v tibble  1.4.2     v forcats 0.3.0
-
-    ## -- Conflicts ----------------------------------------------------------------------------- tidyverse_conflicts() --
-    ## x dplyr::filter() masks stats::filter()
-    ## x dplyr::lag()    masks stats::lag()
-    ## x purrr::lift()   masks caret::lift()
-
-``` r
 library(magrittr)
-```
-
-    ## 
-    ## Attaching package: 'magrittr'
-
-    ## The following object is masked from 'package:purrr':
-    ## 
-    ##     set_names
-
-    ## The following object is masked from 'package:tidyr':
-    ## 
-    ##     extract
-
-``` r
 library(here)
-```
-
-    ## here() starts at C:/Users/pechonf/Documents/Summer School Lausanne/UseR
-
-``` r
 load("training_set.RData")
 
 head(training_set)
