@@ -213,25 +213,4 @@ sqrt(mean((predict.train(model_fit) - training_set$AvClaimAmount) ^ 2))
 
     ## [1] 577.9231
 
-And on the testing set
 
-``` r
-load("testing_set_correction.RData")
-require(caret)
-```
-
-    ## Loading required package: caret
-
-    ## Loading required package: lattice
-
-``` r
-require(ranger)
-```
-
-    ## Loading required package: ranger
-
-``` r
-sqrt(mean((predict.train(model_fit, testing_set) - testing_set$AvClaimAmount) ^ 2))
-```
-
-    ## [1] 565.0626
