@@ -13,6 +13,8 @@ output:
         toc: true
 ---
 
+EDIT: Please note that this file has been updated on 16/10/2018. No code has been changed. However, this script has been run on the new version (0.3.0) of the rfCountData package, which corrects some errors (related to OOB error) and uses ggplot2.
+
 # Loading the data and the packages
 First, the packages
 ```{r, tidy=TRUE, results='hide', message=FALSE, warning=FALSE}
@@ -38,6 +40,8 @@ in_training = createDataPartition(dataset$ClaimNb, times = 1, p = 0.8, list=FALS
 training_set = dataset[in_training,]
 testing_set  = dataset[-in_training,]
 ```
+
+#Random Forest on Count Data
 
 The package *randomForest* allows to perform regression and classification. However, the split criterion in the regression case is based on the MSE, which may not be relevant for count data. Moreover, it did not allow the inclusion of an offset to take into account the different exposures of the policyholders.
 
@@ -92,7 +96,7 @@ m1_rf = rfPoisson(x = training_set[,4:10],
 
 We can again see the error as a function of the number of trees
 ```{r, tidy=TRUE, fig.align='center', dpi=500}
-plot(m1_rf, ylim=c(0.16,0.17))
+plot(m1_rf)
 ```
 
 We can also plot the variable importance.
@@ -114,6 +118,7 @@ partialPlot(x=m1_rf, pred.data=training_set[,4:10], offset=log(training_set$Expo
             log=TRUE)))
 ```
 
+# Cross-Validation
 
 We could rely on cross-validation to find the optimal mtry parameter. We are only going to compare two different mtry parameter (due to the time limitation).
 
@@ -197,7 +202,7 @@ m_final_1 = rfPoisson(x = training_set[,4:10],
               importance=TRUE,
               do.trace=TRUE,
               keep.forest=TRUE)
-plot(m_final_1, ylim=c(0.160,0.17))
+plot(m_final_1)
 ```
 
 We can compare with a higher nodesize..
@@ -216,7 +221,7 @@ m_final_2 = rfPoisson(x = training_set[,4:10],
               importance=TRUE,
               do.trace=TRUE,
               keep.forest=TRUE)
-plot(m_final_2, ylim=c(0.160,0.17))
+plot(m_final_2)
 ```
 
 ... and with a lower nodesize.
@@ -235,7 +240,7 @@ m_final_3 = rfPoisson(x = training_set[,4:10],
               importance=TRUE,
               do.trace=TRUE,
               keep.forest=TRUE)
-plot(m_final_3, ylim=c(0.160,0.17))
+plot(m_final_3)
 ```
 
 We conclude with the usual mean deviance on the testing_set
