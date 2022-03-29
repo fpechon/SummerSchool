@@ -1,6 +1,10 @@
 ---
 title: "Brief Introduction to R and Descriptive Analysis of the Dataset"
 output:
+  github_document:
+    toc: true
+    number_sections: true    
+    html_preview: true
   html_document:
     toc: true
     toc_float: true
@@ -8,9 +12,7 @@ output:
     theme: united
     highlight: tango
     code_folding: show
-    keep_md: false
-  github_document:
-        toc: true
+    keep_md: true
 ---
 ```{r, include=TRUE, message=FALSE, warning=FALSE}
 options(encoding = 'UTF-8')
