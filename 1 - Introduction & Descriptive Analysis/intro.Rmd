@@ -15,7 +15,7 @@ output:
 ```{r, include=TRUE, message=FALSE, warning=FALSE}
 options(encoding = 'UTF-8')
 #Loading all the necessary packages
-if (!require("xts")) install.packages("caret")
+if (!require("xts")) install.packages("xts")
 if (!require("CASdatasets")) install.packages("CASdatasets", repos = "http://cas.uqam.ca/pub/", type="source")
 if (!require("caret")) install.packages("caret")
 if (!require("ggplot2")) install.packages("ggplot2")
@@ -30,7 +30,6 @@ if (!require("rgdal")) install.packages("rgdal", type="source")
 if (!require("xtable")) install.packages("xtable")
 if (!require("maptools")) install.packages("maptools")
 if (!require("scales")) install.packages("scales")
-if (!require("data.table")) install.packages
 if (!require("broom")) install.packages("broom")
 if (!require("stringi")) install.packages("stringi")
 
@@ -50,7 +49,6 @@ require("rgeos")
 require("xtable")
 require("maptools")
 require("scales")
-require("data.table")
 require("broom")
 require("stringi")
 ```
@@ -72,6 +70,8 @@ data("freMTPLfreq")
 dataset = freMTPLfreq %>% filter(Exposure<=1 & Exposure >= 0 & CarAge<=25)
 
 saveRDS(dataset, file="../dataset.Rds")
+# To load the dataset, uncomment the following line
+# dataset = readRDS(file = "../dataset.Rds")
 ```
 
 A good idea is to check whether the dataset has been loaded correctly. To do this, the following tools can be used:
