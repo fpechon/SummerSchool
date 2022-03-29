@@ -2480,7 +2480,7 @@ ptn_1 = Sys.time() - ptn
 ptn_1
 ```
 
-    ## Time difference of 3.4727 mins
+    ## Time difference of 3.44925 mins
 
 ``` r
 plot(m.lasso.0.cv)
@@ -2791,7 +2791,7 @@ ptn_1 = Sys.time() - ptn
 ptn_1
 ```
 
-    ## Time difference of 3.663867 mins
+    ## Time difference of 3.690687 mins
 
 ``` r
 plot(m.ridge.0.cv)
@@ -2819,7 +2819,7 @@ ptn_1 = Sys.time() - ptn
 ptn_1
 ```
 
-    ## Time difference of 3.371233 mins
+    ## Time difference of 3.52188 mins
 
 ``` r
 plot(m.elasticnet.0.cv)
