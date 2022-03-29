@@ -1,6 +1,10 @@
 ---
 title: "GLM, GLMM and LASSO"
 output:
+  github_document:
+    toc: true
+    number_sections: true    
+    html_preview: true
   html_document:
     toc: true
     toc_float: true
@@ -9,8 +13,6 @@ output:
     highlight: tango
     code_folding: show
     keep_md: false
-  github_document:
-        toc: true
 ---
 
 
@@ -22,13 +24,20 @@ if (!require("visreg")) install.packages("visreg")
 if (!require("MASS")) install.packages("MASS")
 if (!require("lme4")) install.packages("lme4")
 if (!require("glmnet")) install.packages("glmnet")
-
+if (!require("jtools")) install.packages("jtools")
+if (!require("scales")) install.packages("scales")
+if (!require("forcats")) install.packages("forcats")
+if (!require("stringr")) install.packages("stringr")
 
 require("caret")
 require("visreg")
 require("MASS")
 require("lme4")
 require("glmnet")
+require("jtools")
+require("scales")
+require("forcats")
+require("stringr")
 ```
 
 ```{r, tidy=TRUE}
@@ -42,16 +51,88 @@ require("glmnet")
 # folds = createDataPartition(freMTPLfreq$ClaimNb, 0.5)
 # dataset = freMTPLfreq[folds[[1]], ]
 
-load("dataset.RData")
+dataset = readRDS("../dataset.RDS")
 ```
 
 # GLM
 
+## Data preparation
+
+An important preliminary step is always data preparation. In our simple dataset, we only have 10 variables. As a reminder, we have the following variables.
+```{r}
+str(dataset)
+```
+As we see, some variables are considered as integers (int) and others are considered as factors. For factor variable, an important feature is the 'reference level'. R automatically assigns the first category/value encountered as reference level. This can often be suboptimal, and it is preferable to have as reference level the category with the most observation (or largest exposure).
+
+### Brand
+
+We can see the different levels of a factor variable with the *levels* function. The first level is the *reference level*.
+
+```{r}
+levels(dataset$Brand)
+```
+
+
+```{r}
+# table(dataset$Brand)
+# or with forcats package ... (see cheatsheet in last section)
+dataset$Brand %>% fct_count(sort=TRUE, prop=TRUE)
+```
+*Renault, Nissan or Citroen* appears to be the most populated level of variable 'Brand'. This is why we will set this level as reference level, using the function relevel, or we can directly use the relevant function from the forcats package.
+```{r}
+# dataset$Brand = relevel(x = dataset$Brand, ref= "Renault, Nissan or Citroen")
+# Easier with forcats
+
+dataset$Brand = dataset$Brand %>% fct_infreq()
+levels(dataset$Brand)
+```
+
+### Gas
+
+```{r}
+dataset$Gas %>% fct_count(sort=TRUE, prop=TRUE)
+```
+We will set Regular as reference level.
+
+```{r}
+dataset$Gas = dataset$Gas %>% fct_infreq()
+levels(dataset$Gas)
+```
+
+### Region
+
+```{r}
+dataset$Region %>% fct_count(sort=TRUE, prop=TRUE)
+```
+We will set Regular as reference level.
+
+```{r}
+dataset$Region = dataset$Region %>% fct_infreq()
+levels(dataset$Region)
+```
+
+### Power
+
+Power is bit of a different factor variable. Indeed, there is some order between the levels (from lower power to higher power).
+```{r}
+dataset$Power %>% fct_count(sort=TRUE, prop=TRUE)
+```
+
+
+We will leave 'd' as reference level, as it is highly populated and will allow us to keep it simple to interpret the regression coefficients (levels are ordered).
+```{r}
+dataset$Power = dataset$Power %>% fct_relevel(sort)
+levels(dataset$Power)
+```
+
+## Model
+
+
 We are going to model the claim frequencies using a GLM. We will only consider the categorical variables in this part, as we will see later that other tools are available to treat the continuous variables without having to discretize them.
 
-Let us first split out dataset in two parts: a training set and a testing set.
+Let us first split out dataset in two parts: a training set and a testing set (this step requires the *caret* package).
 ```{r, tidy=TRUE}
-set.seed(21)
+set.seed(21) # For reproducibility
 in_training = createDataPartition(dataset$ClaimNb, times = 1, p = 0.8, list=FALSE)
 training_set = dataset[in_training,]
 testing_set  = dataset[-in_training,]
@@ -59,7 +140,7 @@ testing_set  = dataset[-in_training,]
 
 ## Intercept
 
-The main function is called *glm*. Let us run the function on our dataset.
+The main function is called *glm*. Let us run the function on our training set
 ```{r, tidy=TRUE}
 m0 = glm(ClaimNb ~ offset(log(Exposure)), 
          data = training_set,
@@ -76,7 +157,7 @@ exp(m0$coefficients)
 
 ## All the variables
 
-In this whole session, we will only consider the discrete variables, namely *Power*, *Brand*, *Gas* and *Region*.
+First, we will only consider the discrete variables, namely *Power*, *Brand*, *Gas* and *Region*.
 
 Let us include all these variables (without interactions) in the model.
 ```{r, tidy=TRUE}
@@ -85,14 +166,28 @@ m1 = glm(ClaimNb ~ offset(log(Exposure)) + Power  + Gas + Brand + Region,
          family=poisson(link = log))
 summary(m1)
 ```
+We will use the function *visreg* from package *visreg* to plot the coefficients, along with their confidence interval.
 
-Using the function *visreg* from the package of the same name, we can easily see plots related to the effect of the variables.
-```{r, tidy=TRUE, fig.align='center', dpi=500}
-visreg(m1, type="contrast", scale="response")
+```{r}
+visreg(m1, "Power", type="contrast", scale="response", gg=TRUE, rug=FALSE, partial=FALSE) + theme_bw()
+```
+
+```{r}
+visreg(m1, "Gas", type="contrast", scale="response", gg=TRUE, rug=FALSE, partial=FALSE) + theme_bw()
+```
+
+```{r}
+visreg(m1, "Region", type="contrast", scale="response", gg=TRUE, rug=FALSE, partial=FALSE) + theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 ```
 
 
-We see some levels of some variables appear to be not significantly different from 0. Moreover, it could be that some levels appear to be significantly different from 0, but are not significantly different from each other and could be merged.
+```{r}
+visreg(m1, "Brand", type="contrast", scale="response", gg=TRUE, rug=FALSE, partial=FALSE) + theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+We see some levels of some variables appear to be not significantly different from 0 (or 1 on the response scale). Moreover, it could be that some levels appear to be significantly different from 0, but are not significantly different from each other and could be merged.
 
 If we wish to perform a likelihood ratio test between the full model ($m_1$) and the model without any explanatory variables ($m_0$)
 ```{r, tidy=TRUE}
@@ -106,25 +201,37 @@ We can try to merge some of the levels that appear to be not significantly diffe
 Let's start with the variable Brand.
 
 ```{r, tidy=TRUE}
-training_set$Brand_merged = training_set$Brand
-testing_set$Brand_merged = testing_set$Brand
+# Old style:
+# training_set$Brand_merged = training_set$Brand
+# testing_set$Brand_merged = testing_set$Brand
+# 
+# 
+# Brand_list_levels = list("A" = c("Fiat",
+#                                  "Mercedes, Chrysler or BMW",
+#                                  "Opel, General Motors or Ford",
+#                                  "other",
+#                                  "Volkswagen, Audi, Skoda or Seat"),
+#                          "B" = "Japanese (except Nissan) or Korean",
+#                          "C" = "Renault, Nissan or Citroen")
+# 
+# levels(training_set$Brand_merged) <- Brand_list_levels
+# levels(testing_set$Brand_merged) <- Brand_list_levels
+# Better: Use forcats with function fct_collapse
 
-levels(training_set$Brand_merged) <- list("A" = c("Fiat","Mercedes, Chrysler or BMW",
-                                                  "Opel, General Motors or Ford",
-                                                  "other",
-                                                  "Volkswagen, Audi, Skoda or Seat"),
-                                          "B" = "Japanese (except Nissan) or Korean",
-                                          "C" = "Renault, Nissan or Citroen")
 
-levels(testing_set$Brand_merged) <- list("A" = c("Fiat","Mercedes, Chrysler or BMW",
-                                                  "Opel, General Motors or Ford",
-                                                  "other",
-                                                  "Volkswagen, Audi, Skoda or Seat"),
-                                          "B" = "Japanese (except Nissan) or Korean",
-                                          "C" = "Renault, Nissan or Citroen")
+training_set$Brand_merged =training_set$Brand %>% fct_collapse("A" = c("Fiat",
+                                                                       "Mercedes, Chrysler or BMW",
+                                                                       "Opel, General Motors or Ford",
+                                                                       "other",
+                                                                       "Volkswagen, Audi, Skoda or Seat"))
 
-table(training_set$Brand_merged, useNA = "always")
+testing_set$Brand_merged =testing_set$Brand %>% fct_collapse("A" = c("Fiat",
+                                                                   "Mercedes, Chrysler or BMW",
+                                                                   "Opel, General Motors or Ford",
+                                                                   "other",
+                                                                   "Volkswagen, Audi, Skoda or Seat"))
 
+training_set$Brand_merged %>% fct_count(sort=TRUE, prop=TRUE)
 ```
 
 Let us now estimate the new model with these merged levels...
@@ -146,18 +253,31 @@ anova(m2, m1, test="Chisq")
 
 Let us now look at the variable Power.
 ```{r, tidy=TRUE, dpi=500, fig.align='center'}
-visreg(m2, xvar="Power", type="contrast", scale="response")
+visreg(m2, "Power", type="contrast", scale="response", gg=TRUE, rug=FALSE, partial=FALSE) + theme_bw()
 ```
 
 ```{r, tidy=TRUE}
-training_set$Power_merged = training_set$Power
-levels(training_set$Power_merged) = list("A"= "d",
-                                         "B" = c("e","f", "g", "h"),
-                                         "C" = c("i","j", "k", "l", "m", "n", "o"))
-testing_set$Power_merged = testing_set$Power
-levels(testing_set$Power_merged) = list("A"= "d",
-                                         "B" = c("e","f", "g", "h"),
-                                         "C" = c("i", "j",  "k", "l", "m", "n", "o"))
+# Old style
+# training_set$Power_merged = training_set$Power
+# 
+# Power_list_levels = list("A"= "d",
+#                          "B" = c("e","f", "g", "h"),
+#                          "C" = c("i","j", "k", "l", "m", "n", "o"))
+# 
+# levels(training_set$Power_merged) = Power_list_levels
+# testing_set$Power_merged = testing_set$Power
+# levels(testing_set$Power_merged) = Power_list_levels
+# Easier with forcats
+
+training_set$Power_merged = training_set$Power %>% fct_collapse("A" = "d",
+                                                                "B" = c("e","f", "g", "h"),
+                                                                "C" = c("i","j", "k", "l", "m", "n", "o"))
+
+testing_set$Power_merged = testing_set$Power %>% fct_collapse("A" = "d",
+                                                              "B" = c("e","f", "g", "h"),
+                                                              "C" = c("i","j", "k", "l", "m", "n", "o"))
+
+
 m3 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged  + Gas + Brand_merged + Region,
          data = training_set,
          family=poisson(link = log))
@@ -169,16 +289,21 @@ anova(m3, m2, test="Chisq")
 
 Finally, let's consider the variable Region.
 ```{r,tidy=TRUE, dpi=500, fig.align='center'}
-visreg(m3, xvar="Region", type="contrast", scale="response")
+visreg(m3, "Region", type="contrast", scale="response", gg=TRUE, rug=FALSE, partial=FALSE) + theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 ```
 
-
 ```{r, tidy=TRUE}
-training_set$Region_merged = training_set$Region
-levels(training_set$Region_merged)[c(1,5, 10)] ="R11-31-74"
+# Old style:
+# training_set$Region_merged = training_set$Region
+# levels(training_set$Region_merged)[which(levels(training_set$Region) %in% c("Ile-de-France", "Limousin"))] ="IDF-LIMOUSIN"
+# 
+# testing_set$Region_merged = testing_set$Region
+# levels(testing_set$Region_merged)[which(levels(training_set$Region) %in% c("Ile-de-France", "Limousin"))] ="IDF-LIMOUSIN"
+# Better: Use forcats
 
-testing_set$Region_merged = testing_set$Region
-levels(testing_set$Region_merged)[c(1,5, 10)] ="R11-31-74"
+training_set$Region_merged = training_set$Region %>% fct_collapse("IDF-LIMOUSIN" = c("Ile-de-France", "Limousin"))
+testing_set$Region_merged = testing_set$Region %>% fct_collapse("IDF-LIMOUSIN" = c("Ile-de-France", "Limousin"))
 
 
 m4 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged  + Gas + Brand_merged + Region_merged,
@@ -192,7 +317,7 @@ anova(m4, m3, test="Chisq")
 
 Let's see if we can add some interactions.
 ```{r, tidy=TRUE}
-m5.1 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Gas + Brand_merged + Region_merged,
+m5.1 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged  + Gas + Brand_merged + Region_merged + Power_merged:Gas,
          data = training_set,
          family=poisson(link = log))
 summary(m5.1)
@@ -203,53 +328,72 @@ Let's try to find other interactions
 
 - with Power_merged.
 ```{r, tidy=TRUE}
-m5.2 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged  + Gas +  Power_merged *Brand_merged + Gas+Region_merged,
+m5.2 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged  + Gas + Brand_merged + Region_merged + Power_merged:Gas + Power_merged:Brand_merged,
          data = training_set,
          family=poisson(link = log))
-anova(m4, m5.2, test="Chisq")
-
-m5.3 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged  + Gas +  Brand_merged + Gas + Power_merged *Region_merged,
-         data = training_set,
-         family=poisson(link = log))
-anova(m4, m5.3, test="Chisq")
+anova(m5.1, m5.2, test="Chisq")
 ```
-We will now keep the interaction between Power_merged and Region_merged, and try other possibilities.
+
+```{r}
+m5.3 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged  + Gas + Brand_merged + Region_merged + Power_merged:Gas + Power_merged:Brand_merged + Power_merged:Region_merged,
+         data = training_set,
+         family=poisson(link = log))
+anova(m5.2, m5.3, test="Chisq")
+```
+
+
+
+We will now keep the model m5.2 for now and look for other interactions.
 
 
 - with Gas
-
 ```{r, tidy=TRUE}
-m5.4 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged   +Brand_merged* Gas +Power_merged*Region_merged,
-         data = training_set,
-         family=poisson(link = log))
-anova(m5.3, m5.4, test="Chisq")
 
-m5.5 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged*Region_merged + Gas +Brand_merged + Gas+Region_merged* Gas,
+m5.4 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged  + Gas + Brand_merged + Region_merged + Power_merged:Gas + Power_merged:Brand_merged + Gas:Brand_merged,
          data = training_set,
          family=poisson(link = log))
-anova(m5.3, m5.5, test="Chisq")
+
+anova(m5.2, m5.4, test="Chisq")
 ```
+
+```{r}
+m5.5 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged  + Gas + Brand_merged + Region_merged + Power_merged:Gas + Power_merged:Brand_merged + Gas:Region_merged,
+         data = training_set,
+         family=poisson(link = log))
+anova(m5.2, m5.5, test="Chisq")
+```
+
+
 - with Brand_merged
 
 ```{r, tidy=TRUE}
-m5.6 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged,
+m5.6 = glm(ClaimNb ~ offset(log(Exposure)) + Power_merged  + Gas + Brand_merged + Region_merged + Power_merged:Gas + Power_merged:Brand_merged + Brand_merged:Region_merged,
          data = training_set,
          family=poisson(link = log))
-anova(m5.3, m5.6, test="Chisq")
+anova(m5.2, m5.6, test="Chisq")
 ```
-This is in the 'gray zone'. We will keep the interaction.
+We will keep this interaction.
 
 
-We can visualize the interaction between Power_merged and Region_merged
+We can visualize the interaction between Power_merged and Gas
 
 ```{r, tidy=TRUE, fig.align='center', dpi=500}
-visreg(m5.6, xvar="Power_merged", by="Region_merged", scale="response", type="contrast")
+visreg(m5.6, by="Power_merged", xvar="Gas", scale="response", type="contrast", gg=TRUE, partial=FALSE, rug=FALSE) + theme_bw()
 ```
 
-and between Region_merged and Brand_merged
+and between Power_merged and Brand_merged
 
 ```{r, tidy=TRUE, fig.align='center', dpi=500}
-visreg(m5.6, xvar="Brand_merged", by="Region_merged", scale="response", type="contrast")
+visreg(m5.6, xvar="Brand_merged", by="Power_merged", scale="response", type="contrast", gg=TRUE, partial=FALSE, rug=FALSE) + theme_bw()+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+and between Brand_merged and Region_merged
+
+```{r, tidy=TRUE, fig.align='center', dpi=500}
+visreg(m5.6, by="Region_merged", xvar="Brand_merged", scale="response", type="contrast", gg=TRUE, partial=FALSE, rug=FALSE) + theme_bw()+ 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 ```
 
 ## Predictive Power of the models
@@ -274,13 +418,164 @@ results[5] = 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,
   sum(dpois(x = testing_set$ClaimNb, lambda = predict(m4, newdata=testing_set,  type="response"),log=TRUE)))
 
 results[6] = 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
-  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m5.3, newdata=testing_set,  type="response"),log=TRUE)))
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m5.2, newdata=testing_set,  type="response"),log=TRUE)))
 
 results[7] = 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
   sum(dpois(x = testing_set$ClaimNb, lambda = predict(m5.6, newdata=testing_set,  type="response"),log=TRUE)))
 
 results
 ```
+
+# GLM (including continuous variables)
+
+We have not used the variables CarAge and DriverAge, as well as Density, which are continuous variables.
+In fact, since CarAge and DriverAge only take integer values, we could simply consider to factor these two variables and, possibility, regroup some levels.
+
+We will build from model m1 from the previous section.
+
+
+```{r}
+training_set$CarAge_factor = factor(training_set$CarAge) %>% fct_relabel(str_pad, width=2) %>% fct_relevel(sort)
+training_set$DriverAge_factor = factor(training_set$DriverAge) %>% fct_relabel(str_pad, width=2) %>% fct_relevel(sort)
+
+testing_set$CarAge_factor = factor(testing_set$CarAge) %>% fct_relabel(str_pad, width=2) %>% fct_relevel(sort)
+testing_set$DriverAge_factor = factor(testing_set$DriverAge) %>% fct_relabel(str_pad, width=2) %>% fct_relevel(sort)
+
+
+m7 = glm(ClaimNb ~ offset(log(Exposure)) + Power  + Gas + Brand + Region + CarAge_factor + DriverAge_factor,
+         data = training_set,
+         family=poisson(link = log))
+summary(m7)
+```
+
+
+```{r}
+p1 = visreg(m7, "DriverAge_factor", type="contrast", scale="response", gg=TRUE, rug=FALSE, partial=FALSE) + theme_bw() 
+p1 + scale_y_continuous(limits=c(0,1.5))
+```
+
+
+
+```{r}
+p1 = visreg(m7, "CarAge_factor", type="contrast", scale="response", gg=TRUE, rug=FALSE, partial=FALSE) + theme_bw() 
+p1 + scale_y_continuous(limits=c(0,1.5))
+```
+
+
+
+For variable DriverAge, we could "only" merge the larger ages (e.g., > 70 years).
+```{r}
+training_set$DriverAge_factor2 = training_set$DriverAge_factor %>% fct_collapse('70+' = as.character(seq(70,99,1)))
+testing_set$DriverAge_factor2 = testing_set$DriverAge_factor %>% fct_collapse('70+' = as.character(seq(70,99,1)))
+```
+
+For AgeCar, we could group by steps of 5 or 10 years (for instance).
+
+```{r}
+training_set$CarAge_factor2 = cut(training_set$CarAge, breaks=c(0,5,10,15,25), include.lowest = TRUE)
+testing_set$CarAge_factor2 = cut(testing_set$CarAge, breaks=c(0,5,10,15,25), include.lowest = TRUE)
+
+```
+
+
+```{r}
+m8 = glm(ClaimNb ~ offset(log(Exposure)) + Power  + Gas + Brand + Region + CarAge_factor2 + DriverAge_factor2,
+         data = training_set,
+         family=poisson(link = log))
+summary(m8)
+```
+
+
+
+```{r}
+p1 = visreg(m8, "DriverAge_factor2", type="contrast", scale="response", gg=TRUE, rug=FALSE, partial=FALSE) + theme_bw() 
+p1 + scale_y_continuous(limits=c(0,1.5))
+```
+
+```{r}
+p1 = visreg(m8, "CarAge_factor2", type="contrast", scale="response", gg=TRUE, rug=FALSE, partial=FALSE) + theme_bw() 
+p1 + scale_y_continuous(limits=c(0,1.5))
+```
+
+Another possibility would be to include directly both CarAge and DriverAge, without categorizing them. Let us take a look at what happens (we will only include DriverAge for this illustration).
+
+```{r}
+m9 = glm(ClaimNb ~ offset(log(Exposure)) + Power  + Gas + Brand + Region +  DriverAge,
+         data = training_set,
+         family=poisson(link = log))
+summary(m9)
+```
+```{r}
+p1 = visreg(m9, "DriverAge", type="contrast", scale="response", gg=TRUE, rug=FALSE, partial=FALSE) + theme_bw() 
+p1 + scale_y_continuous(limits=c(0,1.5))
+```
+We see a log-linear effect, as we could have expected..
+
+We can, of course, include quadratic, or other polynomial terms, to capture non-linear effects on the score scale. We will use the function *poly*. We can see however that it is very sensitive, especially on the limits. For instance, with a polynomial of degree 5:
+
+```{r}
+m10 = glm(ClaimNb ~ offset(log(Exposure)) + Power  + Gas + Brand + Region +  poly(DriverAge, 5),
+         data = training_set,
+         family=poisson(link = log))
+summary(m10)
+```
+```{r}
+visreg(m10, "DriverAge", type="contrast", scale="response", gg=TRUE, rug=FALSE, partial=FALSE) + theme_bw() 
+```
+
+Let us now focus on CarAge.
+```{r}
+m11 = glm(ClaimNb ~ offset(log(Exposure)) + Power  + Gas + Brand + Region +  poly(DriverAge, 5) + poly(CarAge, 4),
+         data = training_set,
+         family=poisson(link = log))
+summary(m11)
+
+visreg(m11, "CarAge", type="contrast", scale="response", gg=TRUE, rug=FALSE, partial=FALSE) + theme_bw() 
+```
+
+```{r, tidy=TRUE}
+results = data.frame(model_no = seq(1,12), deviance = 0)
+
+results[1, "deviance"] = 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m0, newdata=testing_set,  type="response"),log=TRUE)))
+
+results[2, "deviance"] = 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m1, newdata=testing_set,  type="response"),log=TRUE)))
+
+results[3, "deviance"] = 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m2, newdata=testing_set,  type="response"),log=TRUE)))
+
+results[4, "deviance"] = 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m3, newdata=testing_set,  type="response"),log=TRUE)))
+
+results[5, "deviance"] = 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m4, newdata=testing_set,  type="response"),log=TRUE)))
+
+results[6, "deviance"] = 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m5.2, newdata=testing_set,  type="response"),log=TRUE)))
+
+results[7, "deviance"] = 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m5.6, newdata=testing_set,  type="response"),log=TRUE)))
+
+results[8, "deviance"] = 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m7, newdata=testing_set,  type="response"),log=TRUE)))
+
+results[9, "deviance"] = 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m8, newdata=testing_set,  type="response"),log=TRUE)))
+
+results[10, "deviance"] = 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m9, newdata=testing_set,  type="response"),log=TRUE)))
+
+results[11, "deviance"] = 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m10, newdata=testing_set,  type="response"),log=TRUE)))
+
+results[12, "deviance"] = 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m11, newdata=testing_set,  type="response"),log=TRUE)))
+
+results
+```
+
+
 
 # GLMM
 
@@ -290,8 +585,9 @@ We will directly consider the last models from the previous section (GLM), and n
 
 The function **glm.nb** from package **MASS** allows to perform the Poisson-Gamma distribution.
 ```{r, tidy=TRUE}
-m.nb.5.6 = glm.nb(ClaimNb ~ offset(log(Exposure)) +
-                    Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged,
+m.nb.5.6 = glm.nb(ClaimNb ~ offset(log(Exposure)) + Power_merged + Gas + Brand_merged + 
+    Region_merged + Power_merged:Gas + Power_merged:Brand_merged + 
+    Brand_merged:Region_merged,
          data = training_set)
 summary(m.nb.5.6)
 ```
@@ -419,5 +715,7 @@ x_test = model.matrix(ClaimNb ~ 0 + Power  * Region + Power*Brand + Power*Gas + 
 ```
 
 
+# Useful links
 
+- https://raw.githubusercontent.com/rstudio/cheatsheets/main/factors.pdf
 

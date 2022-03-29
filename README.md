@@ -1,4 +1,4 @@
-Summer School Lausanne 2018
+P&C Insurance: Pricing
 ================
 
 All the scripts of the UseR sessions are available here.
@@ -6,19 +6,20 @@ All the scripts of the UseR sessions are available here.
 Required Software
 -----------------
 
--   R (at least 3.4.3 <https://cloud.r-project.org/bin/windows/base/> )
+-   R (at least 4.0.0 <https://cloud.r-project.org/bin/windows/base/> )
 -   RStudio ( <https://www.rstudio.com/products/rstudio/download/#download> )
 -   For Windows, Rtools : <https://cran.r-project.org/bin/windows/Rtools/> (Make sure to check the box *add to path* when installing Rtools)
--   For Mac: Install gfortran-6.1.pkg (more info <https://cran.r-project.org/bin/macosx/tools/> )
+-   For Mac: No extra compilator should be required = Nothing else to do.
 
-Please run the following script in your R session to install all the required packages. Make sure Rtools (Windows) or gfortan (Mac) has been installed previously.
+Please run the following script in your R session to install all the required packages. Make sure Rtools (Windows) has been installed previously.
 
 Start with the package containing datasets. If there is a query to install from source, answer "y" (yes).
 
 ``` r
 if (!require("sp")) install.packages("sp")
 if (!require("xts")) install.packages("xts")
-if (!require("CASdatasets")) install.packages("CASdatasets", repos = "http://cas.uqam.ca/pub/R/", type="source")
+if (!require("CASdatasets")) install.packages("CASdatasets", repos = "http://cas.uqam.ca/pub/", type="source")
+
 require("CASdatasets")
 ```
 
