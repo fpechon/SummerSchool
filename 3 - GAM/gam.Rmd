@@ -1,6 +1,8 @@
 ---
 title: "Generalized Additive Models"
 output:
+  github_document:
+        toc: true
   html_document:
     toc: true
     toc_float: true
@@ -9,8 +11,6 @@ output:
     highlight: tango
     code_folding: show
     keep_md: false
-  github_document:
-        toc: true
 ---
 
 # Loading the data and the packages
@@ -33,7 +33,8 @@ then, the data
 # set.seed(85)
 # folds = createDataPartition(freMTPLfreq$ClaimNb, 0.5)
 # dataset = freMTPLfreq[folds[[1]], ]
-load("dataset.RData")
+
+dataset = readRDS("../dataset.RDS")
 ```
 
 
@@ -115,7 +116,7 @@ fit2<-gam(totalClaimObs ~ s(CarAge),
 
 ```
 
-- Let us now consider a continuous covariate: CarAge
+- Let us visualize the estimated function.
 
 ```{r, fig.align="center", message=FALSE, dpi=500, tidy=TRUE}
 require(visreg)
@@ -177,7 +178,7 @@ Let us now iterate, and fit again the discrete variables, then CarAge, then Driv
 	fit_it_CarAge=list(fit2)
 	fit_it_DriverAge=list(fit3)
 
-	while (abs(LL0/LLi-1)>epsilon){
+	while (abs(LL0/LLi-1)>epsilon & (i < 20)){
 	  i=i+1
 	  LL0=LLi
 		#Discrete variables
@@ -320,11 +321,11 @@ The gam function works very similarly to the glm function. The continuous covari
 Let us start with the model we created above.
 ```{r, fig.align="center", tidy=TRUE}
 # Same as above..
-# ptn_0 = Sys.time()
-# m0_gam = gam(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged + s(DriverAge)+s(CarAge),
-#          data = training_set,
-#          family=poisson(link = log))
-# print(Sys.time()-ptn_0)
+ptn_0 = Sys.time()
+m0_gam = gam(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged + s(DriverAge)+s(CarAge),
+         data = training_set,
+         family=poisson(link = log))
+print(Sys.time()-ptn_0)
 ```
 
 ## Comparison with bam
@@ -348,6 +349,13 @@ We can see the fitted function using *plot*,
 par(mfrow=c(1,2))
 plot(m0_bam, trans=exp, scale=0, shade=TRUE)
 ```
+Since 2020, the package mgcViz simplifies greatly the creation of visuals of GAMs. (Vignette available here: https://cran.r-project.org/web/packages/mgcViz/vignettes/mgcviz.html)
+
+```{r}
+require(mgcViz)
+viz <- getViz(m0_bam)
+print(plot(viz, allTerms = T), pages = 1)
+```
 
 
 ## Bivariate function
@@ -355,17 +363,59 @@ plot(m0_bam, trans=exp, scale=0, shade=TRUE)
 We can also include interactions between the two continuous variables. We simply estimate a bivariate function.
 ```{r, tidy=TRUE}
 cl = makeCluster(detectCores()-1) # Number of cores to use
-m1_bam = bam(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged+ s(DriverAge) + s(CarAge) + s(DriverAge, CarAge),
+m1_bam = bam(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged+ te(DriverAge, CarAge), # or replace te(DriverAge, CarAge) by ti(DriverAge) + ti(CarAge) + ti(DriverAge, CarAge)
          data = training_set,
          family=poisson(link = log),
          cluster = cl)
 stopCluster(cl)
-summary(m1_bam)
+m1_bam
 ```
+
+```{r}
+cl = makeCluster(detectCores()-1) # Number of cores to use
+m1_bam_b = bam(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged+ s(DriverAge, CarAge),
+         data = training_set,
+         family=poisson(link = log),
+         cluster = cl)
+stopCluster(cl)
+m1_bam_b
+```
+
+To choose between *te* and *s* when adding bivariate functions, Wood (2017) recommends the following:
+
+"
+*Tensor product, te*
+Invariant to linear rescaling of covariates, but not to rotation of covariate space. Good for smooth interactions of quantities measured in different units, or where very different degrees of smoothness appropriate relative to different covariates. Computationally inexpensive, provided TPRS bases are not used as marginal bases. Apart from scale invariance, not much supporting theory.
+
+*TPRS, s(...,bs="tp")*
+Invariant to rotation of covariate space (isotropic), but not to rescaling of covariates. Good for smooth interactions of quantities measured in same units, such as spatial co-ordinates, where isotropy is appropriate. Computational cost can be high as it increases with square of number of data (can be avoided by approximation).
+"
+
+
+We can visualize the interactions:
+
+```{r}
+vis.gam(m1_bam, view=c("DriverAge", "CarAge"),  plot.type = 'contour')
+```
+
+
+```{r}
+vis.gam(m1_bam_b, view=c("DriverAge", "CarAge"),  plot.type = 'contour')
+```
+
+
+We can compute the log-ikelihood
+```{r}
+logLik.gam(m0_bam)
+logLik.gam(m1_bam)
+logLik.gam(m1_bam_b)
+```
+
+
 
 The likelihood ratio test still works like in the GLM framework.
 ```{r, tidy=TRUE}
-anova(m0_bam, m1_bam, test="Chisq")
+anova(m0_bam, m1_bam_b, test="Chisq")
 ```
 
 ## Interaction between a continuous and a discrete variable
@@ -381,12 +431,14 @@ stopCluster(cl)
 summary(m2_bam)
 ```
 
-When we now plot the functions, we obtain **two** functions for *CarAge*.
-```{r, tidy=TRUE, dpi=500, fig.align='center'}
-par(mfrow=c(1,2))
-plot(m2_bam, shade=TRUE, trans=exp, scale=0, select=2)
-plot(m2_bam, shade=TRUE, trans=exp, scale=0, select=3)
+When we now plot the functions, we obtain **two** functions for *CarAge*. Note that *sm* 
+
+```{r}
+b <- getViz(m2_bam)
+gridPrint(plot(sm(b, 2)) + theme_bw() +l_ciPoly()+ l_fitLine(colour = "red"),
+          plot(sm(b, 3)) + theme_bw() +l_ciPoly()+ l_fitLine(colour = "red"), ncol=2)
 ```
+
 
 We can test if the interaction improves our model.
 
@@ -407,6 +459,15 @@ par(mfrow=c(1,2))
 plot(m3_bam, shade=TRUE, trans=exp, scale=-1, select=1)
 plot(m3_bam, shade=TRUE, trans=exp, scale=-1, select=2)
 ```
+
+
+Or with mgcViz:
+```{r}
+b <- getViz(m3_bam)
+gridPrint(plot(sm(b, 1)) + theme_bw() +l_ciPoly()+ l_fitLine(colour = "red"),
+          plot(sm(b, 2)) + theme_bw() +l_ciPoly()+ l_fitLine(colour = "red"), ncol=2)
+```
+
 
 ## Cross-validation
 
@@ -489,54 +550,13 @@ head(testing_set[,c("GLM_pred", "GAM_pred")], n=25)
 If we plot the prediction of GLM vs GAM
 
 ```{r, dpi=500, fig.align='center'}
-ggplot(testing_set) + geom_point(aes(x=testing_set$GLM_pred, y=testing_set$GAM_pred))+ylab("GAM")+xlab("GLM")+geom_abline(slope=1, intercept=0, color="red")
+ggplot(testing_set) + geom_point(aes(x=GLM_pred, y=GAM_pred))+ylab("GAM")+xlab("GLM")+geom_abline(slope=1, intercept=0, color="red")+
+  scale_x_continuous(labels = scales::percent_format(accuracy = 0.01))+
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.01))
 ```
 
 However, the total amount of expected claims are still close.
 ```{r}
 sum(testing_set$GLM_pred) #GLM
 sum(testing_set$GAM_pred) #GAM
-```
-
-
-
-# 'Manual' backfitting
-
-In some cases, calling the *gam* function can be slow, due to the size of the dataset. If the continuous variable has actually only a few values (e.g. ZIP, Age of Driver), it is possible to use some kind of manual backfitting to speed up the computation.
-
-Let us consider this model below:
-```{r, tidy=TRUE, dpi=500, fig.align='center'}
-manual_back_0 = gam(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged,
-         data = training_set,
-         family=poisson(link = log))
-```
-
-We wish to add the continuous covariate DriverAge
-For each value of DriverAge, we can compute the observed number of claims and the expected number of claims.
-```{r, tidy=TRUE, dpi=500, fig.align='center'}
-require(plyr)
-manual = training_set
-manual$pred = predict(manual_back_0, manual, type="response")
-mm = ddply(manual, .(DriverAge), summarise,  
-	              totalClaimObs=sum(ClaimNb), totalClaimExp=sum(pred))
-head(mm)
-dim(mm)
-
-ptn_0 = Sys.time()
-manual_back_1 = gam(ClaimNb ~ offset(log(pred)) + s(DriverAge),
-         data = manual,
-         family=poisson(link = log))
-ptn_1 = Sys.time() - ptn_0
-plot(manual_back_1, shade=TRUE, trans=exp, scale=0)
-```
-
-We can compare to the regular computational time.
-```{r, tidy=TRUE}
-ptn_2 = Sys.time()
-manual_back_2 = bam(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged +  Brand_merged + Gas+Region_merged* Brand_merged + s(DriverAge),
-         data = training_set,
-         family=poisson(link = log))
-ptn_3 = Sys.time() - ptn_2
-
-c(ptn_1, ptn_3)
 ```
