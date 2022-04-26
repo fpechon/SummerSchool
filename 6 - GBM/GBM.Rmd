@@ -1,6 +1,8 @@
 ---
 title: "GBM"
 output:
+  github_document:
+        toc: true
   html_document:
     toc: true
     toc_float: true
@@ -9,17 +11,21 @@ output:
     highlight: tango
     code_folding: show
     keep_md: false
-  github_document:
-        toc: true
 ---
 
 #Introduction 
 
 We can start by loading the packages.
 ```{r, warning=FALSE, message=FALSE, tidy=TRUE}
+require(devtools)
+install_github("gbm-developers/gbm3")
+
 library(gbm3)
 library(caret)
 library(mgcv)
+library(reshape2)
+library(ggplot2)
+library(dplyr)
 ```
 
 We can also load the data (same as in the previous sessions).
@@ -33,7 +39,7 @@ We can also load the data (same as in the previous sessions).
 # set.seed(85)
 # folds = createDataPartition(freMTPLfreq$ClaimNb, 0.5)
 # dataset = freMTPLfreq[folds[[1]], ]
-load("../dataset.RData")
+dataset = readRDS("../dataset.RDS")
 
 set.seed(21)
 in_training = createDataPartition(dataset$ClaimNb, times = 1, p = 0.8, list=FALSE)
@@ -64,8 +70,8 @@ m0 = gbmt(ClaimNb ~ offset(log(Exposure)) + CarAge + DriverAge,
                                         shrinkage = 0.01, #Default is 0.001
                                         interaction_depth = 5,  #the max number of non-terminal nodes in each tree 
                                         min_num_obs_in_node = 1000,
-                                        bag_fraction = 0.5,
-                                        num_train = 1*nrow(training_set)),
+                                        bag_fraction = 0.5, # At each tree, only 50% of the data is considered
+                                        num_train = 0.5*nrow(training_set)), #50% of the training set will be used in the learning process
          is_verbose = TRUE,
          keep_gbm_data = TRUE,
          par_details = gbmParallel(num_threads = 3)) #Parallel computing
@@ -89,7 +95,7 @@ m1 = gbm_more(m0, num_new_trees = 400, is_verbose = TRUE)
 We can check the optimal number of trees based on the out-of-bag observations.
 
 ```{r}
-gbmt_performance(m1, method = "OOB")
+gbmt_performance(m1, method="OOB")
 ```
 
 It is however better to perform cross-validation to find the optimal number of boosting iterations.
@@ -102,6 +108,7 @@ m0 = gbmt(ClaimNb ~ offset(log(Exposure)) + CarAge + DriverAge,
                                         shrinkage = 0.01, #Default is 0.001
                                         interaction_depth = 5,  #the max number of non-terminal nodes in each tree 
                                         min_num_obs_in_node = 1000,
+                                        bag_fraction = 0.5,
                                         num_train = 1*nrow(training_set)),
          is_verbose = TRUE,
          keep_gbm_data = TRUE,
@@ -121,6 +128,12 @@ To get the numerical value,
 best_iter = gbmt_performance(m0, method="cv")
 best_iter
 ```
+The cross-validation error can be retrieved.
+```{r}
+m0$cv_error[gbmt_performance(m0, method="cv")] # or m0$cv_error[best_iter]
+```
+
+
 
 Let's see the variable influence.
 
@@ -143,6 +156,12 @@ When we are finished, we can evaluate the performance of the model on the valida
 2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
   sum(dpois(x = testing_set$ClaimNb, lambda = predict(m0,newdata = testing_set,n.trees=best_iter, type="response") * testing_set$Exposure,
             log=TRUE)))
+```
+We can take a look at the first tree, using the *pretty_gbm_tree* function.
+
+```{r}
+pretty_gbm_tree(m0, tree_index =1) %>% 
+  filter(SplitVar != -1) # Only keep non terminal nodes
 ```
 
 ## Using all the variables
@@ -224,6 +243,8 @@ for (i in 1:7){
 Let's compute Friedman's H statistic for interaction, for all the possible couple of variable.
 
 ```{r, tidy=TRUE, fig.align='center', dpi=500}
+var_names = c("CarAge", "DriverAge", "Power", "Brand","Gas", "Region", "Density" )
+
 res = matrix(NA, 7,7)
 for (i in 1:6){
   for (j in (i+1):7){
@@ -231,11 +252,11 @@ for (i in 1:6){
   }
 }
 diag(res) = 0
-row.names(res) = c("CarAge", "DriverAge", "Power", "Brand","Gas", "Region", "Density" )
+row.names(res) = var_names
 colnames(res) = row.names(res)
-library(reshape2)
+
 interact_melt<-melt(res,na.rm = TRUE)
-library(ggplot2)
+
 ggplot(data = interact_melt, aes(x=Var1, y=Var2, fill=value)) + 
   geom_tile(color = "white")+
   scale_fill_gradient2(low = "white", mid = "gray", high = "blue",name="Friedman's\nH-statistic") + 
@@ -243,18 +264,28 @@ ggplot(data = interact_melt, aes(x=Var1, y=Var2, fill=value)) +
                                    size = 12, hjust = 1))+
   coord_fixed()
 ```
-
-
 Let us plot the partial dependencies of some of these variables.
 
 ```{r, tidy=TRUE, fig.align='center', dpi=500}
-plot(m0_gbm, var_index = c(5, 3), num_trees = best_iter, type="response") #Power, Gas
+plot(m0_gbm, var_index = c(which(var_names == "Gas"), which(var_names == "Power")), num_trees = best_iter, type="response") #Power, Gas
+```
+```{r, tidy=TRUE, fig.align='center', dpi=500}
+plot(m0_gbm, var_index = c(which(var_names == "Gas"), which(var_names == "Region")), num_trees = best_iter, type="response") # Gas, Region
+```
+
+
+```{r, tidy=TRUE, fig.align='center', dpi=500}
+plot(m0_gbm, var_index = c(which(var_names == "Brand"), which(var_names == "CarAge")), num_trees = best_iter, type="response") 
 ```
 
 ```{r, tidy=TRUE, fig.align='center', dpi=500}
-plot(m0_gbm, var_index = c(5, 6), num_trees = best_iter, type="response") # Gas, Region
+plot(m0_gbm, var_index = c(which(var_names == "Power"), which(var_names == "Brand")), num_trees = best_iter, type="response") # Gas, Region
 ```
 
+
+```{r, tidy=TRUE, fig.align='center', dpi=500}
+plot(m0_gbm, var_index = c(which(var_names == "CarAge"), which(var_names == "DriverAge")), num_trees = best_iter, type="response") # Gas, Region
+```
 
 We can check the power of prediction of the model.
 ```{r, warning=FALSE, tidy=TRUE}
@@ -343,9 +374,10 @@ m0_bam = bam(ClaimNb ~ offset(log(Exposure)) + Power_merged  * Region_merged +  
          cluster = cl)
 stopCluster(cl)
 ggplot() + 
-  geom_point(aes(x=predict(m0_bam, training_set[1:500,], type="response"),
-                          y=predict(m0_gbm,newdata = training_set[1:500,],n.trees=best_iter, type="response") * training_set$Exposure[1:500])) + geom_abline(slope=1, intercept=0) + 
-  xlab("GAM") + ylab("GBM")
+  geom_point(aes(x=predict(m0_bam, head(training_set, 500), type="response"),
+                          y=predict(m0_gbm,newdata = head(training_set, 500),n.trees=best_iter, type="response") *head(training_set$Exposure, 500))) + 
+  geom_abline(slope=1, intercept=0) + 
+  xlab("GAM") + ylab("GBM")+coord_fixed()
 ```
 
 
@@ -353,12 +385,47 @@ ggplot() +
 
 Assume that customers always choose the cheapest insurance price. Let's compare two insurance companies, one using GAM and one using GBM. We assume that the average cost of claim is equal for all policyholders.
 ```{r, warning=FALSE, tidy=TRUE}
-pred = as.data.frame(cbind(predict(m0_bam, training_set, type="response"), predict(m0_gbm,newdata = training_set,n.trees=best_iter, type="response") * training_set$Exposure))
+pred = data.frame(gam = predict(m0_bam, training_set, type="response"),
+                  gbm = predict(m0_gbm,newdata = training_set,n.trees=best_iter, type="response") * training_set$Exposure)
 
 pred$company = 1*apply(pred, 1, function(x){x[1] == min(x[1], x[2])})
 
 # Totals expected claims for company A and total observed claims
-c(sum(pred$V1 * pred$company), sum(pred$company * training_set$ClaimNb))
+c(sum(pred$gam * pred$company), sum(pred$company * training_set$ClaimNb))
 # Total expected claims for company B and total observed claims
-c(sum(pred$V2 * (1-pred$company)), sum((1-pred$company) * training_set$ClaimNb)) 
+c(sum(pred$gbm * (1-pred$company)), sum((1-pred$company) * training_set$ClaimNb)) 
 ```
+
+## Final Remark
+
+It may be required to correct the "intercept" of a gbm. Indeed, let us take at look at the total expected number of claims and compare it to the observed one. Let us do the same comparison with the GAM from above.
+```{r}
+# GAM
+print(paste(c("GAM predicted ", "GAM  obs"),c(sum(pred$gam), sum(training_set$ClaimNb))))
+
+print(paste(c("GBM predicted ", "GBM  obs"),c(sum(pred$gbm), sum(training_set$ClaimNb))))
+```
+
+GBM tend to underestimate the total number of claims. We could correct the claim frequency with 
+```{r}
+intercept_correction = sum(training_set$ClaimNb)/sum(pred$gbm)
+intercept_correction
+```
+
+Let us do it, and recompute the error on the testing set, first without correction, then with correction.
+
+```{r}
+# Without correction
+
+2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = predict(m0_gbm,newdata = testing_set,n.trees=best_iter, type="response") * testing_set$Exposure,
+            log=TRUE)))
+
+
+# With correction
+
+2*(sum(dpois(x = testing_set$ClaimNb, lambda = testing_set$ClaimNb,log=TRUE))-
+  sum(dpois(x = testing_set$ClaimNb, lambda = intercept_correction * predict(m0_gbm,newdata = testing_set,n.trees=best_iter, type="response") * testing_set$Exposure,
+            log=TRUE)))
+```
+
